@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    // 目标语法版本。ES2022 支持顶层 await、Error.cause 等现代特性。
+    "target": "ES2022",
+    // 用 ES 模块（import/export），和 package.json 的 "type": "module" 对应。
+    // NodeNext：按 Node 的真实规则解析模块，正是它要求 import 本地文件写 .js 后缀
+    // （因为运行时加载的是编译后的 .js）。也让 node:process 等内置模块类型被识别。
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // 严格模式全家桶：null 检查、隐式 any 报错等。学习阶段务必开着。
+    "strict": true,
+    // 允许 import 没有默认导出的 CommonJS 模块时写默认导入。
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    // 只做类型检查，不产出 js（我们用 tsx 直接跑源码）。
+    "noEmit": true
+  },
+  "include": ["src"]
+}
