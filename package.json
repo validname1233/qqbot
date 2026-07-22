@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx --env-file=.env src/index.ts",
+    "webhook": "tsx --env-file=.env src/webhook.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
