@@ -38,6 +38,11 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22 # SSH 端口。若你改过非默认端口，换成 ${{ secrets.SERVER_PORT }}
           script: |
+            # 引入 NVM / Node 环境变量，确保非交互式 SSH 能够识别 npm 和 pm2 命令
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            export PATH=$PATH:/usr/local/bin:$HOME/.nvm/versions/node/$(node -v 2>/dev/null)/bin
+
             set -e   # 任一命令失败即中止，避免"拉取失败却照样重启旧代码"
 
             cd ~/workspace/qqbot
