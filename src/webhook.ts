@@ -6,6 +6,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 
 import { config } from "./config.js";
 import { signValidation, verifySignature } from "./crypto.js";
+import { parseEvent, type RawEvent } from "./events.js";
+import { dispatch } from "./dispatcher.js";
 
 // 本地监听端口。只绑 127.0.0.1，不对公网暴露——外面只能经 nginx 进来。
 const PORT = 3000;
@@ -106,9 +108,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
 
-    // 验签通过，才是真 QQ。先快速回 200 ACK 避免重推，事件分发逻辑后面再加。
+    // 验签通过，才是真 QQ。关键顺序：先立刻回 200 ACK，再去异步分发。
+    // 发消息要调 QQ 接口、有耗时；若让 QQ 干等，它会判超时并重推同一条事件。
+    // 所以先 ACK 让 QQ 放心，分发在 ACK 之后进行，其错误自己兜住、不影响已发出的响应。
     sendJson(res, 200, { op: 12 }); // op 12 = HTTP 回调 ACK
-    console.log("[webhook] 收到已验签事件:", raw);
+
+    // 解析成强类型事件后交给 dispatcher 路由。解析不认识的事件返回 null，dispatch 会忽略。
+    const event = parseEvent(payload as RawEvent);
+    dispatch(event).catch((err: unknown) => {
+      console.error("[webhook] 事件处理出错:", err);
+    });
     return;
   }
 
