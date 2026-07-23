@@ -14,11 +14,11 @@ jobs:
     steps:
       # 1. 检出仓库代码
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # 2. 配置 Node.js —— 和服务器/本地保持一致（Node 24）
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24'
 
