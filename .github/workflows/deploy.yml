@@ -1,0 +1,58 @@
+name: Deploy QQBot to Server
+
+# 推送到 main 分支时自动部署。
+on:
+  push:
+    branches: [ main ]
+  # 允许在 Actions 页面手动触发一次（不改代码也能重新部署）。
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest # GitHub 云端 Linux 运行环境
+
+    steps:
+      # 1. 检出仓库代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 配置 Node.js —— 和服务器/本地保持一致（Node 24）
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # 3. 装依赖 + 类型检查。tsc 报错会让本步骤失败，从而拦下这次部署。
+      #    npm ci 依赖 package-lock.json，比 npm install 更快更可复现。
+      - name: Install dependencies & Type Check
+        run: |
+          npm ci
+          npm run typecheck
+
+      # 4. SSH 连上服务器：覆盖式拉取最新代码、装依赖、重启 pm2。
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: 22 # SSH 端口。若你改过非默认端口，换成 ${{ secrets.SERVER_PORT }}
+          script: |
+            set -e   # 任一命令失败即中止，避免"拉取失败却照样重启旧代码"
+
+            cd ~/workspace/qqbot
+
+            # 覆盖式更新：丢弃服务器上对已跟踪文件的任何改动，与远端 main 对齐。
+            # 只动 git 跟踪的文件，.env 等未跟踪文件不受影响。
+            git fetch origin main
+            git reset --hard origin/main
+
+            # 装依赖（含 devDependencies 里的 tsx，webhook 靠它跑源码）。
+            npm install
+
+            # 不编译：tsconfig 是 noEmit，直接用 tsx 跑 src/webhook.ts。
+            # 首次没有该进程时用 start 建立，之后都走 restart。
+            pm2 restart qqbot || pm2 start "npm run webhook" --name qqbot
+
+            # 保存进程列表，配合 pm2 startup 实现服务器重启后自动恢复。
+            pm2 save

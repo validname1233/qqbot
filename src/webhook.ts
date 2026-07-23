@@ -5,7 +5,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import { config } from "./config.js";
-import { signValidation } from "./crypto.js";
+import { signValidation, verifySignature } from "./crypto.js";
 
 // 本地监听端口。只绑 127.0.0.1，不对公网暴露——外面只能经 nginx 进来。
 const PORT = 3000;
@@ -90,9 +90,25 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
   // ---------- op 0：业务事件推送 ----------
   if (payload.op === OP_DISPATCH) {
-    // 先快速回 200，避免 QQ 重推。事件的具体分发逻辑后面再加。
+    // 门卫：先验签，证明这条确实来自 QQ。
+    // 公网地址谁都能发 POST，不验签 = 机器人对全网开放。验不过直接拒，不进业务逻辑。
+    // QQ 把签名放在请求头（注意 Node 里 header 名全小写），待验证内容 = timestamp + 原始body。
+    // raw 必须是原始字节（readRawBody 拿到的那个），不能用解析再序列化的结果，否则字节不一致。
+    const timestamp = req.headers["x-signature-timestamp"];
+    const signature = req.headers["x-signature-ed25519"];
+    if (
+      typeof timestamp !== "string" ||
+      typeof signature !== "string" ||
+      !verifySignature(config.appSecret, timestamp, raw, signature)
+    ) {
+      sendJson(res, 401, { message: "签名校验失败" });
+      console.warn("[webhook] 事件签名校验失败，已拒绝");
+      return;
+    }
+
+    // 验签通过，才是真 QQ。先快速回 200 ACK 避免重推，事件分发逻辑后面再加。
     sendJson(res, 200, { op: 12 }); // op 12 = HTTP 回调 ACK
-    console.log("[webhook] 收到事件:", raw);
+    console.log("[webhook] 收到已验签事件:", raw);
     return;
   }
 
