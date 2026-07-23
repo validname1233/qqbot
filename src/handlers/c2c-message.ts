@@ -7,9 +7,18 @@
 
 import type { C2CMessageEvent } from "../events.js";
 import { replyC2CMessage } from "../messages.js";
+import { askAI } from "../ai.js";
 
 export async function handleC2CMessage(event: C2CMessageEvent): Promise<void> {
-  // 最简业务：原样把用户说的话回一句。以后在这里加命令解析、调各种功能。
-  const reply = `你说了：${event.content}`;
+  // 把用户的话交给 AI，拿到回复再发回去。
+  // AI 调用可能失败（网络、余额、限流……），单独 try 兜住：
+  // 失败时回一句友好提示，而不是让整个事件处理崩掉、用户干等没反应。
+  let reply: string;
+  try {
+    reply = await askAI(event.content);
+  } catch (err) {
+    console.error("[handler] AI 调用失败:", err);
+    reply = "抱歉，我现在有点忙，稍后再试试吧。";
+  }
   await replyC2CMessage(event.authorOpenid, reply, event.msgId);
 }
