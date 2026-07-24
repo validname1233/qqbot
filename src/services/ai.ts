@@ -1,9 +1,9 @@
-// ai.ts —— 调用大模型对话接口（硅基流动 SiliconFlow）。
+// services/ai.ts —— 调用大模型对话接口（硅基流动 SiliconFlow）。
 // 职责单一：给一句用户输入，返回模型的回复文本。
-// 和 messages.ts 平级：那个是"把消息发回 QQ"，这个是"问大模型"，都是对外部服务的调用。
+// 放在 services/ 下：它是"非 QQ 的外部服务"，和 qq/ 平级区分开。
 // handler 只管"要不要调、拿到回复怎么用"，不关心这里的 URL、鉴权、body 细节。
 
-import { config } from "./config.js";
+import { config } from "../config.js";
 
 const API_URL = "https://api.siliconflow.cn/v1/chat/completions";
 

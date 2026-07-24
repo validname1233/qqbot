@@ -5,9 +5,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import { config } from "./config.js";
-import { signValidation, verifySignature } from "./crypto.js";
-import { parseEvent, type RawEvent } from "./events.js";
-import { dispatch } from "./dispatcher.js";
+import { signValidation, verifySignature } from "./qq/crypto.js";
+import { parseEvent } from "./events/registry.js";
+import type { RawEvent } from "./events/raw.js";
+import { dispatch } from "./events/dispatcher.js";
 
 // 本地监听端口。只绑 127.0.0.1，不对公网暴露——外面只能经 nginx 进来。
 const PORT = 3000;

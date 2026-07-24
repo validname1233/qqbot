@@ -32,4 +32,22 @@ export async function replyC2CMessage(
   });
 }
 
-// 以后加 replyGroupMessage（发到 /v2/groups/{group_openid}/messages）时放这里。
+// 发送群消息（被动回复）。
+// groupOpenid：哪个群（来自事件的 groupOpenid）。
+// 其余参数含义同 replyC2CMessage。只是接口路径不同：群消息发到 /v2/groups/...。
+export async function replyGroupMessage(
+  groupOpenid: string,
+  content: string,
+  msgId: string,
+  msgSeq = 1,
+): Promise<void> {
+  await apiRequest(`/v2/groups/${groupOpenid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content,
+      msg_type: MSG_TYPE_TEXT,
+      msg_id: msgId,
+      msg_seq: msgSeq,
+    }),
+  });
+}

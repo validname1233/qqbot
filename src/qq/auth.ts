@@ -2,7 +2,7 @@
 // QQ 的接口需要一个有时效的 token（约 2 小时）。我们缓存它，
 // 快过期时才重新换，避免每个请求都跑一趟认证。
 
-import { config } from "./config.js";
+import { config } from "../config.js";
 
 // 换 token 的接口地址（注意和调业务接口的 api.sgroup.qq.com 不是同一个域名）。
 const TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";

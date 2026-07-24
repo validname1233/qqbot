@@ -2,8 +2,8 @@
 // 里程碑：换到 token → 脱敏打印 → 用 token 调只读接口 /gateway 拿网关地址。
 // 这条链路一通，后面"连 WebSocket 收事件、发消息"都是在它上面加东西。
 
-import { getAccessToken } from "./auth.js";
-import { apiRequest } from "./api.js";
+import { getAccessToken } from "./qq/auth.js";
+import { apiRequest } from "./qq/api.js";
 
 // /gateway 接口返回的形状：一个 WebSocket 网关地址。
 interface GatewayResponse {
