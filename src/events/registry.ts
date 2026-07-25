@@ -8,11 +8,11 @@
 import type { EventDefinition, BaseEvent } from "./definition.js";
 import type { RawEvent } from "./raw.js";
 import { c2cMessageDef } from "./C2C_MESSAGE_CREATE/index.js";
-import { groupMessageDef } from "./GROUP_MESSAGE_CREATE/index.js";
+import { groupAtMessageDef } from "./GROUP_AT_MESSAGE_CREATE/index.js";
 
 // 所有已知事件定义。加事件 = 往这个数组加一项（并在上面 import）。
 // as const 让 TS 记住数组每一项的精确类型，下面才能反推出各事件的联合。
-export const eventDefs = [c2cMessageDef, groupMessageDef] as const;
+export const eventDefs = [c2cMessageDef, groupAtMessageDef] as const;
 
 // 从「定义」反推出它解析出的事件类型：EventDefinition<E> → E。
 type EventOf<D> = D extends EventDefinition<infer E> ? E : never;
