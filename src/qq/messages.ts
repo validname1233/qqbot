@@ -32,6 +32,45 @@ export async function replyC2CMessage(
   });
 }
 
+// 主动发送单聊消息（主动推送，非回复）。
+// 和 replyC2CMessage 的唯一区别：不带 msg_id / msg_seq。
+// 不带 msg_id 时 QQ 就把它当作「主动消息」——不依附于用户某条消息，
+// 因此不受「msgId 5 分钟有效」限制，可在任意时刻推送（如定时提醒到点）。
+// 代价：主动消息有频控（单好友 20/qpm、每天最多 1000 条）和权限要求
+// （无权限报 40034105，未加好友报 40054004，用户拒收报 40054013），
+// 这些错误由 apiRequest 统一抛出，调用方需自行兜错。
+export async function pushC2CMessage(
+  openid: string,
+  content: string,
+): Promise<void> {
+  await apiRequest(`/v2/users/${openid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content,
+      msg_type: MSG_TYPE_TEXT,
+    }),
+  });
+}
+
+// 主动发送群消息（主动推送，非回复）。
+// 和 pushC2CMessage 对称：不带 msg_id / msg_seq 即为主动消息，可任意时刻推送。
+// 群主动消息要的是 group_openid——群事件里现成就有（不像单聊要 user_openid），
+// 所以「群里设提醒、到点推回群」不涉及 openid 转换难题。
+// 频控/权限：单群 20/qpm、每天最多 1000 条，未认证 Bot 仅 30/qpm；
+// 无权限报 40034105，机器人非群成员报 40034101 / 40054003。错误由 apiRequest 抛出。
+export async function pushGroupMessage(
+  groupOpenid: string,
+  content: string,
+): Promise<void> {
+  await apiRequest(`/v2/groups/${groupOpenid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content,
+      msg_type: MSG_TYPE_TEXT,
+    }),
+  });
+}
+
 // 发送群消息（被动回复）。
 // groupOpenid：哪个群（来自事件的 groupOpenid）。
 // 其余参数含义同 replyC2CMessage。只是接口路径不同：群消息发到 /v2/groups/...。

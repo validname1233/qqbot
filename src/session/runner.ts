@@ -55,7 +55,7 @@ export function runSession(ctx: MessageContext): SessionOutcome {
 
   // 情况2：没在会话中，但用户发了某状态机的开局命令 → 开局并锁定。
   if (ctx.command !== null) {
-    const machine = byName.get(ctx.command);
+    const machine = byName.get(ctx.command);  //从注册表中找到要启动的状态机
     if (machine !== undefined) {
       const t = machine.start(ctx);
       if (t.nextState !== null) {
