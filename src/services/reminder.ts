@@ -94,6 +94,6 @@ export const reminderService: CommandService = {
     }, seconds * 1000);
 
     // 立即回确认。提醒在未来触发，与这条确认互不阻塞。
-    return `好的，${seconds} 秒后提醒你：${description}`;
+    return `本鲸鱼知道啦！${seconds} 秒后提醒你`;
   },
 };
