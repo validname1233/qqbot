@@ -62,7 +62,7 @@ export const reminderService: CommandService = {
             `,
             REMINDER_SYSTEM_PROMPT,
           );
-          await pushC2CMessage(openid, reply);
+          await pushC2CMessage(openid, "时间到啦！" + reply);
         };
       }
       if (event.type === "GROUP_AT_MESSAGE_CREATE") {
@@ -74,7 +74,7 @@ export const reminderService: CommandService = {
             `,
             REMINDER_SYSTEM_PROMPT,
           );
-          await pushGroupMessage(groupOpenid, reply);
+          await pushGroupMessage(groupOpenid, "时间到啦！" + reply);
         };
       }
       return null; // 未知事件类型：本功能不支持，交由下面拒绝
