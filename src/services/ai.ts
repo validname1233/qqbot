@@ -36,6 +36,7 @@ export async function askAI(userText: string): Promise<string> {
           ` },
         { role: "user", content: userText },
       ],
+      enable_thinking: false
     }),
   });
 

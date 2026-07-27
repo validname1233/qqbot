@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 import type { BotEvent } from "./events/registry.js";
 import { chatService } from "./services/chat.js";
+import { runSession } from "./session/runner.js";
 
 // ---------- 注册表 ----------
 // 命令型：关键词 → service。别名也指向同一个 service。
@@ -57,6 +58,14 @@ export function buildContext(event: BotEvent): MessageContext {
 // 命中命令就跑它，没带命令走兜底，命令不认识给出提示。
 // 统一在这里兜错，具体 service 的 handle 不必自己 try/catch。
 export async function runCommand(ctx: MessageContext): Promise<string | null> {
+  // 先问会话层：若该会话正锁在某状态机里（或这条正是开局命令），由它接管，
+  // 直接返回，不再走下面的普通命令路由——这就是「锁在模式里」的短路。
+  // 注意：只短路 command 这一路，observers 维度不受影响（handler 里仍并发跑）。
+  const session = runSession(ctx);
+  if (session.handled) {
+    return session.reply;
+  }
+
   const svc =
     ctx.command === null ? defaultCommand : commands.get(ctx.command);
   if (svc === undefined) {
