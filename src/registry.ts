@@ -10,6 +10,7 @@ import type {
 import type { BotEvent } from "./events/registry.js";
 import { chatService } from "./services/chat.js";
 import { reminderService } from "./services/reminder.js";
+import { agentService } from "./services/agent.js";
 import { runSession } from "./session/runner.js";
 
 // ---------- 注册表 ----------
@@ -23,6 +24,7 @@ function registerCommand(svc: CommandService): void {
 }
 registerCommand(chatService);
 registerCommand(reminderService);
+registerCommand(agentService);
 
 // 没带 / 命令时的兜底 service（直接聊天）。
 const defaultCommand: CommandService = chatService;
