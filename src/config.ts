@@ -35,6 +35,9 @@ export const config = {
   // AI 对话用的硅基流动 API key（必填）和模型名（选填，有默认）。
   aiApiKey: requireEnv("AI_API_KEY"),
   aiModel: optionalEnv("AI_MODEL", "Pro/zai-org/GLM-4.7"),
+  // Agent 最终收尾话术用的模型（选填）。不填就退回和 aiModel 一样，
+  // 想让 Agent 的最终回复质量更高时单独配一个更强的模型。
+  agentModel: optionalEnv("AGENT_MODEL", optionalEnv("AI_MODEL", "Pro/zai-org/GLM-4.7")),
   // Tavily 联网搜索 API key（必填，Agent 的搜索工具要用）。
   tavilyApiKey: requireEnv("TAVILY_API_KEY"),
 } as const;
