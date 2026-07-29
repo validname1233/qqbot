@@ -23,6 +23,15 @@ import { inMemoryStore } from "./memory/in-memory.js";
 import type { ChatMessage } from "./types.js";
 import { DEFAULT_SYSTEM_PROMPT } from "../services/ai.js";
 
+// 调试用计时打点：不传 startedAt 就只打个带时间戳的开始标记，返回值留着传给"结束"那次调用；
+// 传了 startedAt 就顺便算出耗时。排查"哪个环节慢"专用，定位到瓶颈后可以整段删掉。
+function debugTime(label: string, startedAt?: number): number {
+  const now = Date.now();
+  const elapsed = startedAt === undefined ? "" : ` (+${now - startedAt}ms)`;
+  console.log(`[agent:debug] ${new Date(now).toISOString()} ${label}${elapsed}`);
+  return now;
+}
+
 // llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务——
 // 真正要说给用户听的话，由 synthesizeFinalReply 那条带人设的提示词负责。
 // 这里特意不放人设：人设风格（语气词、卖萝莉属性）只会干扰模型对 tool_calls 的稳定输出，没有好处。
@@ -106,13 +115,17 @@ ${toolResultsText}
 // 不带 tools 的调用，换成 askAI 那套默认人设（汐汐），让模型正常回答；
 // 发起了工具调用就把这条 assistant 消息记进 messages，交给 tools 节点去执行。
 async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
+  const t0 = debugTime("llmCall: 第一次调用开始（带 tools，判断是否需要工具）");
   const response = await callModelWithTools(state.messages, toolSchemas());
+  debugTime("llmCall: 第一次调用结束", t0);
 
   if (response.tool_calls === undefined || response.tool_calls.length === 0) {
+    const t1 = debugTime("llmCall: 无工具调用，跑第二次普通调用开始（换人设提示词）");
     const plain = await callModelWithTools([
       { role: "system", content: DEFAULT_SYSTEM_PROMPT },
       ...state.messages.slice(1),
     ]);
+    debugTime("llmCall: 第二次普通调用结束", t1);
     const reply = plain.content ?? "（Agent 没有返回内容）";
     return { messages: [{ role: "assistant", content: reply }], reply };
   }
@@ -132,8 +145,10 @@ async function toolsNode(state: AgentStateT): Promise<AgentUpdateT> {
   const lastMessage = state.messages[state.messages.length - 1];
   const toolCalls = lastMessage?.tool_calls ?? [];
 
+  const tNode = debugTime(`toolsNode: 开始并发执行 ${toolCalls.length} 个工具`);
   const toolMessages = await Promise.all(
     toolCalls.map(async (call): Promise<ChatMessage> => {
+      const tCall = debugTime(`toolsNode: 工具 ${call.function.name} 开始`);
       let args: Record<string, unknown>;
       try {
         args = JSON.parse(call.function.arguments) as Record<string, unknown>;
@@ -141,9 +156,11 @@ async function toolsNode(state: AgentStateT): Promise<AgentUpdateT> {
         args = {};
       }
       const result = await runTool(call.function.name, args, state.ctx);
+      debugTime(`toolsNode: 工具 ${call.function.name} 结束`, tCall);
       return { role: "tool", content: result, tool_call_id: call.id };
     }),
   );
+  debugTime("toolsNode: 全部工具执行完毕", tNode);
 
   return { messages: toolMessages, turnCount: state.turnCount + 1 };
 }
@@ -153,7 +170,9 @@ async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
   // messages[0] 是 system prompt，之后是历史 + 这一轮新增的——挑出 role:"tool" 的
   // 部分喂给 synthesizeFinalReply，和原来 allToolMessages 的口径一致。
   const toolResults = state.messages.filter((msg) => msg.role === "tool");
+  const t0 = debugTime("finalizeNode: synthesizeFinalReply 开始（enableThinking=true，重点怀疑对象）");
   const reply = await synthesizeFinalReply(state.userText, state.history, toolResults);
+  debugTime("finalizeNode: synthesizeFinalReply 结束", t0);
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
@@ -181,6 +200,8 @@ export async function runAgentTurn(
   userText: string,
   ctx: MessageContext,
 ): Promise<string> {
+  const tStart = debugTime(`runAgentTurn: 开始（userText=${userText}）`);
+
   const key = sessionKey(ctx.event);
   const history = await inMemoryStore.get(key);
 
@@ -204,5 +225,6 @@ export async function runAgentTurn(
   // 从 userMessage 开始往后的都是这一轮新增的——直接切片存进短期记忆。
   await inMemoryStore.append(key, ...result.messages.slice(1 + history.length));
 
+  debugTime("runAgentTurn: 结束（整轮总耗时）", tStart);
   return reply;
 }
