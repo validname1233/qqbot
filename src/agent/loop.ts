@@ -21,6 +21,7 @@ import { callModelWithTools } from "./client.js";
 import { runTool, toolSchemas } from "./registry.js";
 import { inMemoryStore } from "./memory/in-memory.js";
 import type { ChatMessage } from "./types.js";
+import { DEFAULT_SYSTEM_PROMPT } from "../services/ai.js";
 
 // llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务——
 // 真正要说给用户听的话，由 synthesizeFinalReply 那条带人设的提示词负责。
@@ -100,13 +101,19 @@ ${toolResultsText}
   return final.content ?? "（Agent 没有返回内容）";
 }
 
-// 节点一：带 tools 调模型。模型没发起工具调用就直接收尾（设置 reply）；
+// 节点一：带 tools 调模型。模型没发起工具调用：说明这问题不需要工具，但刚才那次调用
+// 用的是 AGENT_SYSTEM_PROMPT（纯工具判断人设，不适合直接展示给用户），所以再跑一次
+// 不带 tools 的调用，换成 askAI 那套默认人设（汐汐），让模型正常回答；
 // 发起了工具调用就把这条 assistant 消息记进 messages，交给 tools 节点去执行。
 async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
   const response = await callModelWithTools(state.messages, toolSchemas());
 
   if (response.tool_calls === undefined || response.tool_calls.length === 0) {
-    const reply = response.content ?? "（Agent 没有返回内容）";
+    const plain = await callModelWithTools([
+      { role: "system", content: DEFAULT_SYSTEM_PROMPT },
+      ...state.messages.slice(1),
+    ]);
+    const reply = plain.content ?? "（Agent 没有返回内容）";
     return { messages: [{ role: "assistant", content: reply }], reply };
   }
 
