@@ -88,6 +88,7 @@ export async function runAgentTurn(
     // 模型发起了工具调用：本地并发执行，每个结果包成一条 role:"tool" 消息，
     // 拼回 messages 后进入下一轮循环（如果还有轮次剩余）。
     // 单个工具失败不影响其它工具——runTool 内部已把异常兜成固定短语"工具执行失败"。
+    console.log("[agent:debug] callModelWithTools response:", JSON.stringify(response, null, 2));
     const toolCalls = response.tool_calls;
     messages.push({
       role: "assistant",
