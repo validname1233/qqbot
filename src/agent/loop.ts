@@ -83,6 +83,27 @@ const AgentState = new StateSchema({
 type AgentStateT = typeof AgentState.State;
 type AgentUpdateT = typeof AgentState.Update;
 
+// 群聊身份提示：group 场景下点出"历史消息带昵称前缀"这件事，以及"当前是谁在说话"，
+// 让模型别把昵称当正文、也别把这轮发言人和历史里其他人搞混。单聊没有这个问题，返回空字符串。
+// llmCall 的 plain 分支和 synthesizeFinalReply 都要用，提出来共用一份，避免两处措辞跑偏。
+function buildGroupContextText(event: BotEvent): string {
+  if (event.type !== "GROUP_AT_MESSAGE_CREATE") {
+    return "";
+  }
+  return `
+群聊历史消息格式如下：
+「用户名：消息内容」
+
+其中：
+- 用户名表示真实发送者身份。
+- 每条历史消息前面的用户名必须作为该消息的发送者信息理解。
+- 不要把用户名当作消息正文的一部分。
+- 在回答时，需要结合消息发送者的身份判断上下文。
+
+当前说话的人是：${event.authorName}
+`;
+}
+
 // 轮次用完但 reply 还是空时的收尾：单独拼一段提示词——人设 + 用户原始需求 +
 // 工具结果——不带聊天历史、不带 tools，逼模型只根据这些信息给出一段干净的最终回复。
 // 单开一个函数是因为这段提示词本身有点长，混在节点函数里会显得臃肿。
@@ -103,25 +124,7 @@ async function synthesizeFinalReply(
     .map((msg, i) => `工具结果 ${i + 1}：${msg.content ?? "(无内容)"}`)
     .join("\n\n");
 
-  // 群聊场景：history 里的 user 消息已经被 sqlite.ts 格式化成"昵称：内容"（整群共享一份窗口，
-  // 混着不同人的发言），不点破这个格式，模型容易把昵称当正文、或分不清历史里谁说了什么；
-  // 再点出"当前发起本次请求的是谁"，让这一轮的发言人也和历史身份对应上。单聊没有这个问题，
-  // 一个 key 只对应一个人，不需要额外提示。
-  const groupContextText =
-    event.type === "GROUP_AT_MESSAGE_CREATE"
-      ? `
-群聊历史消息格式如下：
-「用户名：消息内容」
-
-其中：
-- 用户名表示真实发送者身份。
-- 每条历史消息前面的用户名必须作为该消息的发送者信息理解。
-- 不要把用户名当作消息正文的一部分。
-- 在回答时，需要结合消息发送者的身份判断上下文。
-
-当前说话的人是：${event.authorName}
-`
-      : "";
+  const groupContextText = buildGroupContextText(event);
 
   const prompt = `${FINAL_REPLY_SYSTEM_PROMPT}
 ${groupContextText}
@@ -156,11 +159,16 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
   debugTime("llmCall: 第一次调用结束", t0);
 
   if (response.tool_calls === undefined || response.tool_calls.length === 0) {
-    const t1 = debugTime("llmCall: 无工具调用，跑第二次普通调用开始（换人设提示词）");
-    const plain = await callModelWithTools([
-      { role: "system", content: DEFAULT_SYSTEM_PROMPT },
-      ...state.messages.slice(1),
-    ]);
+    const t1 = debugTime("llmCall: 无工具调用，跑第二次普通调用开始（换人设提示词 + agentModel）");
+    const groupContextText = buildGroupContextText(state.ctx.event);
+    const plain = await callModelWithTools(
+      [
+        { role: "system", content: `${DEFAULT_SYSTEM_PROMPT}${groupContextText}` },
+        ...state.messages.slice(1),
+      ],
+      undefined,
+      config.agentModel,
+    );
     debugTime("llmCall: 第二次普通调用结束", t1);
     const reply = plain.content ?? "（Agent 没有返回内容）";
     return { messages: [{ role: "assistant", content: reply }], reply };
