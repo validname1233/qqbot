@@ -16,10 +16,11 @@ import { StateGraph, StateSchema, ReducedValue, START, END } from "@langchain/la
 import { z } from "zod";
 import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
+import type { BotEvent } from "../events/registry.js";
 import { sessionKey } from "../session/key.js";
 import { callModelWithTools } from "./client.js";
 import { runTool, toolSchemas } from "./registry.js";
-import { inMemoryStore } from "./memory/in-memory.js";
+import { sqliteMemoryStore } from "./memory/sqlite.js";
 import type { ChatMessage } from "./types.js";
 import { DEFAULT_SYSTEM_PROMPT } from "../services/ai.js";
 
@@ -51,6 +52,20 @@ const FINAL_REPLY_SYSTEM_PROMPT = `
 // 工具调用最多几轮。1 表示：调一次工具就必须收尾，不允许模型看完工具结果又申请下一轮工具。
 const MAX_TOOL_TURNS = 1;
 
+// 记忆专用的会话键：和状态机用的 sessionKey() 故意不同粒度。
+// sessionKey() 群聊分支带 authorOpenid（群里各人独立锁状态机，互不干扰），
+// 但记忆要的是"整群共享一份窗口"（AI 能看到群里其他人跟机器人说过什么），
+// 所以这里把群聊的 authorOpenid 去掉，只保留 group:<groupOpenid>；
+// 单聊没有这个问题，直接复用 sessionKey() 的结果。
+// 不改 sessionKey() 本身：它同时被 session/runner.ts 的状态机锁定逻辑复用，
+// 那边需要的仍然是"每人每群"的隔离粒度，两者语义不同，不能合并成一个函数。
+function memoryKey(event: BotEvent): string {
+  if (event.type === "GROUP_AT_MESSAGE_CREATE") {
+    return `group:${event.groupOpenid}`;
+  }
+  return sessionKey(event);
+}
+
 // messages 用累加式的 ReducedValue：每个节点只管返回"这一步新增的消息"，
 // 图会自动 concat 到已有 messages 后面——不用像原来手写循环那样自己 push。
 // ctx 用 z.custom 只当类型标记，不做运行时校验（本来就是进程内对象，不需要校验）。
@@ -75,6 +90,7 @@ async function synthesizeFinalReply(
   userText: string,
   history: ChatMessage[],
   toolResults: ChatMessage[],
+  event: BotEvent,
 ): Promise<string> {
   const historyText =
     history.length === 0
@@ -87,8 +103,28 @@ async function synthesizeFinalReply(
     .map((msg, i) => `工具结果 ${i + 1}：${msg.content ?? "(无内容)"}`)
     .join("\n\n");
 
-  const prompt = `${FINAL_REPLY_SYSTEM_PROMPT}
+  // 群聊场景：history 里的 user 消息已经被 sqlite.ts 格式化成"昵称：内容"（整群共享一份窗口，
+  // 混着不同人的发言），不点破这个格式，模型容易把昵称当正文、或分不清历史里谁说了什么；
+  // 再点出"当前发起本次请求的是谁"，让这一轮的发言人也和历史身份对应上。单聊没有这个问题，
+  // 一个 key 只对应一个人，不需要额外提示。
+  const groupContextText =
+    event.type === "GROUP_AT_MESSAGE_CREATE"
+      ? `
+群聊历史消息格式如下：
+「用户名：消息内容」
 
+其中：
+- 用户名表示真实发送者身份。
+- 每条历史消息前面的用户名必须作为该消息的发送者信息理解。
+- 不要把用户名当作消息正文的一部分。
+- 在回答时，需要结合消息发送者的身份判断上下文。
+
+当前说话的人是：${event.authorName}
+`
+      : "";
+
+  const prompt = `${FINAL_REPLY_SYSTEM_PROMPT}
+${groupContextText}
 以下是最近的对话记录（供参考上下文）：
 ${historyText}
 
@@ -171,7 +207,7 @@ async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
   // 部分喂给 synthesizeFinalReply，和原来 allToolMessages 的口径一致。
   const toolResults = state.messages.filter((msg) => msg.role === "tool");
   const t0 = debugTime("finalizeNode: synthesizeFinalReply 开始（enableThinking=true，重点怀疑对象）");
-  const reply = await synthesizeFinalReply(state.userText, state.history, toolResults);
+  const reply = await synthesizeFinalReply(state.userText, state.history, toolResults, state.ctx.event);
   debugTime("finalizeNode: synthesizeFinalReply 结束", t0);
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
@@ -202,8 +238,8 @@ export async function runAgentTurn(
 ): Promise<string> {
   const tStart = debugTime(`runAgentTurn: 开始（userText=${userText}）`);
 
-  const key = sessionKey(ctx.event);
-  const history = await inMemoryStore.get(key);
+  const key = memoryKey(ctx.event);
+  const history = await sqliteMemoryStore.get(key);
 
   const userMessage: ChatMessage = { role: "user", content: userText };
   const initialMessages: ChatMessage[] = [
@@ -223,7 +259,12 @@ export async function runAgentTurn(
 
   // messages 里 [0] 是 system prompt，[1..history.length] 是历史，
   // 从 userMessage 开始往后的都是这一轮新增的——直接切片存进短期记忆。
-  await inMemoryStore.append(key, ...result.messages.slice(1 + history.length));
+  // 传入 author 信息：从事件中提取发言人的 openid 和昵称。
+  await sqliteMemoryStore.append(
+    key,
+    { openid: ctx.event.authorOpenid, name: ctx.event.authorName },
+    ...result.messages.slice(1 + history.length),
+  );
 
   debugTime("runAgentTurn: 结束（整轮总耗时）", tStart);
   return reply;

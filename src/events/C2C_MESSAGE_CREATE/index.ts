@@ -11,6 +11,7 @@ export interface C2CMessageEvent {
   type: "C2C_MESSAGE_CREATE";
   content: string; // 用户说的话
   authorOpenid: string; // 发消息的人，回复就发给这个 openid
+  authorName: string; // 发消息人的昵称（author.username）
   msgId: string; // 这条消息的 id，被动回复要带上它
 }
 
@@ -18,7 +19,7 @@ export interface C2CMessageEvent {
 // 网络来的 d 是 unknown，不可信。先逐字段验一遍，验过 TS 才允许当这个形状用。
 function isC2CMessageData(
   d: unknown,
-): d is { id: string; content: string; author: { user_openid: string } } {
+): d is { id: string; content: string; author: { user_openid: string; username: string } } {
   if (typeof d !== "object" || d === null) return false;
   const obj = d as Record<string, unknown>;
   if (typeof obj.id !== "string" || typeof obj.content !== "string") {
@@ -28,7 +29,8 @@ function isC2CMessageData(
   return (
     typeof author === "object" &&
     author !== null &&
-    typeof (author as Record<string, unknown>).user_openid === "string"
+    typeof (author as Record<string, unknown>).user_openid === "string" &&
+    typeof (author as Record<string, unknown>).username === "string"
   );
 }
 
@@ -42,6 +44,7 @@ export const c2cMessageDef: EventDefinition<C2CMessageEvent> = {
       type: "C2C_MESSAGE_CREATE",
       content: raw.d.content,
       authorOpenid: raw.d.author.user_openid,
+      authorName: raw.d.author.username,
       msgId: raw.d.id,
     };
   },

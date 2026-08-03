@@ -27,10 +27,11 @@ export async function callModelWithTools(
   // 调试用计时打点：和 loop.ts 里的 debugTime 同款格式，独立复制一份是因为
   // client.ts 不依赖 loop.ts（避免反向 import），这里离真正的网络请求最近，
   // 能顺带打印 model / enableThinking，直接对应"是不是思考模式拖慢了耗时"这个猜测。
-  const t0 = Date.now();
-  console.log(
-    `[agent:debug] ${new Date(t0).toISOString()} callModelWithTools: 发起请求 model=${model} enableThinking=${enableThinking}`,
-  );
+  // 暂时不用了，先注释掉——留着方便下次排查性能问题时直接取消注释复用。
+  // const t0 = Date.now();
+  // console.log(
+  //   `[agent:debug] ${new Date(t0).toISOString()} callModelWithTools: 发起请求 model=${model} enableThinking=${enableThinking}`,
+  // );
 
   const response = await fetch(API_URL, {
     method: "POST",
@@ -46,10 +47,10 @@ export async function callModelWithTools(
     }),
   });
 
-  const t1 = Date.now();
-  console.log(
-    `[agent:debug] ${new Date(t1).toISOString()} callModelWithTools: 收到响应 model=${model} enableThinking=${enableThinking} (+${t1 - t0}ms)`,
-  );
+  // const t1 = Date.now();
+  // console.log(
+  //   `[agent:debug] ${new Date(t1).toISOString()} callModelWithTools: 收到响应 model=${model} enableThinking=${enableThinking} (+${t1 - t0}ms)`,
+  // );
 
   if (!response.ok) {
     const detail = await response.text();

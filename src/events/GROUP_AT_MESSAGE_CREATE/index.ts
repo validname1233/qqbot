@@ -14,6 +14,7 @@ export interface GroupAtMessageEvent {
   content: string; // 消息内容
   groupOpenid: string; // 哪个群，回复发到这个群
   authorOpenid: string; // 发消息的群成员 member_openid
+  authorName: string; // 发消息人的昵称（author.username）
   msgId: string; // 这条消息的 id，被动回复要带上它
 }
 
@@ -24,7 +25,7 @@ function isGroupAtMessageData(
   id: string;
   content: string;
   group_openid: string;
-  author: { member_openid: string };
+  author: { member_openid: string; username: string };
 } {
   if (typeof d !== "object" || d === null) return false;
   const obj = d as Record<string, unknown>;
@@ -39,7 +40,8 @@ function isGroupAtMessageData(
   return (
     typeof author === "object" &&
     author !== null &&
-    typeof (author as Record<string, unknown>).member_openid === "string"
+    typeof (author as Record<string, unknown>).member_openid === "string" &&
+    typeof (author as Record<string, unknown>).username === "string"
   );
 }
 
@@ -53,6 +55,7 @@ export const groupAtMessageDef: EventDefinition<GroupAtMessageEvent> = {
       content: raw.d.content,
       groupOpenid: raw.d.group_openid,
       authorOpenid: raw.d.author.member_openid,
+      authorName: raw.d.author.username,
       msgId: raw.d.id,
     };
   },

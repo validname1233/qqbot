@@ -8,8 +8,19 @@
 
 import type { ChatMessage } from "../types.js";
 
+// 发言人身份信息（append user 消息时必须提供，其他角色传 null）
+export interface MessageAuthor {
+  openid: string; // 单聊：user_openid；群聊：member_openid
+  name: string; // 发言人昵称（author.username）
+}
+
 export interface MemoryStore {
   get(key: string): Promise<ChatMessage[]>;
-  append(key: string, ...messages: ChatMessage[]): Promise<void>;
+  // author: user 消息必传（包含 openid 和昵称），assistant/tool/system 消息传 null
+  append(
+    key: string,
+    author: MessageAuthor | null,
+    ...messages: ChatMessage[]
+  ): Promise<void>;
   clear(key: string): Promise<void>;
 }
