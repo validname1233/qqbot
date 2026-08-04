@@ -24,6 +24,8 @@ export type BotEvent = EventOf<(typeof eventDefs)[number]>;
 // ---------- 解析入口 ----------
 // 按 raw.t 找对应定义；没登记的事件返回 null（上层安静忽略）。
 export function parseEvent(raw: RawEvent): BotEvent | null {
+  console.log(`[events] 收到事件: ${raw.t}`);
+
   const def = eventDefs.find((d) => d.t === raw.t);
   if (def === undefined) return null;
   // find 拿到的是「定义的联合」，调用 .parse 后 TS 无法收回到精确成员，
