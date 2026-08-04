@@ -10,6 +10,7 @@ import type {
 import type { BotEvent } from "./events/registry.js";
 import { reminderService } from "./services/reminder.js";
 import { agentService } from "./services/agent.js";
+import { memoryLogObserver } from "./services/memory-log.js";
 import { runSession } from "./session/runner.js";
 
 // ---------- 注册表 ----------
@@ -27,10 +28,13 @@ registerCommand(reminderService);
 // 和 /定时任务 等命令的语义保持一致：不点名就不触发。
 registerCommand(agentService);
 
-// 观察型：每条消息都跑一遍的 service 列表。
-// 目前为空——机制已就位（见 runObservers）。要加"每条消息都要跑"的服务
-// （如成就、计数、日志）时，实现一个 ObserverService 并 push 进来即可。
+// 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
+// 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。
 const observers: ObserverService[] = [];
+function registerObserver(svc: ObserverService): void {
+  observers.push(svc);
+}
+registerObserver(memoryLogObserver);
 
 // ---------- 把原始事件规整成统一 context ----------
 // 解析规则：内容以 / 开头 → 去掉 /，按第一个空格切成 command + args；
