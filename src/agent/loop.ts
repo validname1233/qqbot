@@ -168,6 +168,7 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
       ],
       undefined,
       config.agentModel,
+      true,
     );
     debugTime("llmCall: 第二次普通调用结束", t1);
     const reply = plain.content ?? "（Agent 没有返回内容）";
