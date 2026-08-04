@@ -22,12 +22,10 @@ function registerCommand(svc: CommandService): void {
   }
 }
 registerCommand(reminderService);
-
-// 没带 / 命令时的兜底 service：直接进 Agent 链路。
-// 故意不 registerCommand(agentService)——/Agent 这个关键词不再注册，
-// 只有不带命令的消息才会走到这里；以后要恢复轻量聊天，在 LangGraph 图里
-// 加节点和条件边接入，或者新注册一个 /闲聊 之类的命令单独指向别的 service。
-const defaultCommand: CommandService = agentService;
+// Agent 链路必须显式 /Agent 触发——开了"接收所有消息"后，群里不带命令的普通
+// 聊天消息也会推事件过来，若仍有兜底 service 会导致机器人对群里所有话搭话。
+// 和 /定时任务 等命令的语义保持一致：不点名就不触发。
+registerCommand(agentService);
 
 // 观察型：每条消息都跑一遍的 service 列表。
 // 目前为空——机制已就位（见 runObservers）。要加"每条消息都要跑"的服务
@@ -70,15 +68,20 @@ export async function runCommand(ctx: MessageContext): Promise<string | null> {
     return session.reply;
   }
 
-  const svc =
-    ctx.command === null ? defaultCommand : commands.get(ctx.command);
+  // 没带 / 命令的消息：现在没有任何兜底 service 接手，直接不回复。
+  // 观察者仍会跑（handler 里 runCommand 和 runObservers 并发），只是命令这一路空转。
+  if (ctx.command === null) {
+    return null;
+  }
+
+  const svc = commands.get(ctx.command);
   if (svc === undefined) {
     return `未知命令：/${ctx.command}`;
   }
   try {
     return await svc.handle(ctx);
   } catch (err) {
-    console.error(`[service:${ctx.command ?? "默认"}] 出错:`, err);
+    console.error(`[service:${ctx.command}] 出错:`, err);
     return "这个功能暂时坏了，稍后再试～";
   }
 }

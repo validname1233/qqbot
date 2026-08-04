@@ -56,7 +56,7 @@ export function scheduleReminder(
         await pushC2CMessage(openid, "时间到啦！" + reply);
       };
     }
-    if (event.type === "GROUP_AT_MESSAGE_CREATE") {
+    if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
       const groupOpenid = event.groupOpenid;
       return async () => {
         const reply = await askAI(

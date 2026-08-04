@@ -7,6 +7,7 @@
 import type { BotEvent } from "./registry.js";
 import { handleC2CMessage } from "../handlers/C2C_MESSAGE_CREATE.js";
 import { handleGroupAtMessage } from "../handlers/GROUP_AT_MESSAGE_CREATE.js";
+import { handleGroupMessage } from "../handlers/GROUP_MESSAGE_CREATE.js";
 
 // 遍历 BotEvent 的每个成员，用它的 type 当键，
 // 要求对应 handler 的入参正好是「那一种」事件。
@@ -18,6 +19,7 @@ type HandlerMap = {
 const handlers: HandlerMap = {
   C2C_MESSAGE_CREATE: handleC2CMessage,
   GROUP_AT_MESSAGE_CREATE: handleGroupAtMessage,
+  GROUP_MESSAGE_CREATE: handleGroupMessage,
 };
 
 // 分发一个事件。event 为 null（未识别事件）时安静忽略。

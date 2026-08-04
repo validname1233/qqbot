@@ -15,12 +15,11 @@ export const agentService: CommandService = {
   name: "Agent",
 
   async handle(ctx: MessageContext): Promise<string | null> {
-    // 现在是 registry.ts 的默认兜底 service（没带 / 命令时走这里），
-    // command 为 null 时取整条消息 ctx.text；带命令时取命令后的部分 ctx.args——
-    // 和原 chatService 的取值方式对齐，兼容以后加 /闲聊 之类命令复用同一个 handler。
-    const question = ctx.command === null ? ctx.text : ctx.args;
+    // 现在必须显式 /Agent 触发（registry.ts 不再有兜底 service），
+    // ctx.command 恒不为 null，取命令后的部分即可。
+    const question = ctx.args;
     if (question.trim() === "") {
-      return "跟本鲸鱼说点什么吧～";
+      return "用法：/Agent 你想说的话～";
     }
     return runAgentTurn(question, ctx);
   },

@@ -12,7 +12,7 @@ import type { BotEvent } from "../events/registry.js";
 // 有前缀就不会串到同一份状态里。event.type 一判，TS 把 event 收窄到对应事件，
 // 才能安全访问 groupOpenid / authorOpenid（可辨识联合收窄，和 dispatcher 里同一套路）。
 export function sessionKey(event: BotEvent): string {
-  if (event.type === "GROUP_AT_MESSAGE_CREATE") {
+  if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
     return `group:${event.groupOpenid}:${event.authorOpenid}`;
   }
   return `c2c:${event.authorOpenid}`;

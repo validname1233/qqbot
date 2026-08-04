@@ -16,7 +16,7 @@ import type { BotEvent } from "../events/registry.js";
 // 不改 sessionKey() 本身：它同时被 session/runner.ts 的状态机锁定逻辑复用，
 // 那边需要的仍然是"每人每群"的隔离粒度，两者语义不同，不能合并成一个函数。
 export function memoryKey(event: BotEvent): string {
-  if (event.type === "GROUP_AT_MESSAGE_CREATE") {
+  if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
     return `group:${event.groupOpenid}`;
   }
   return `c2c:${event.authorOpenid}`;
@@ -30,7 +30,7 @@ export function formatSpeakerContent(
   authorName: string,
   event: BotEvent,
 ): string {
-  if (event.type !== "GROUP_AT_MESSAGE_CREATE") {
+  if (event.type !== "GROUP_AT_MESSAGE_CREATE" && event.type !== "GROUP_MESSAGE_CREATE") {
     return content;
   }
   return `${authorName}：${content}`;
