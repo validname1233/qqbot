@@ -8,7 +8,6 @@ import type {
   ObserverService,
 } from "./types.js";
 import type { BotEvent } from "./events/registry.js";
-import { chatService } from "./services/chat.js";
 import { reminderService } from "./services/reminder.js";
 import { agentService } from "./services/agent.js";
 import { runSession } from "./session/runner.js";
@@ -22,12 +21,13 @@ function registerCommand(svc: CommandService): void {
     commands.set(alias, svc);
   }
 }
-registerCommand(chatService);
 registerCommand(reminderService);
-registerCommand(agentService);
 
-// 没带 / 命令时的兜底 service（直接聊天）。
-const defaultCommand: CommandService = chatService;
+// 没带 / 命令时的兜底 service：直接进 Agent 链路。
+// 故意不 registerCommand(agentService)——/Agent 这个关键词不再注册，
+// 只有不带命令的消息才会走到这里；以后要恢复轻量聊天，在 LangGraph 图里
+// 加节点和条件边接入，或者新注册一个 /闲聊 之类的命令单独指向别的 service。
+const defaultCommand: CommandService = agentService;
 
 // 观察型：每条消息都跑一遍的 service 列表。
 // 目前为空——机制已就位（见 runObservers）。要加"每条消息都要跑"的服务

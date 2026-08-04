@@ -1,5 +1,7 @@
-// agent/loop.ts —— agent 的核心流程：用 LangGraph 的 StateGraph 搭一个三节点小图，
+// agent/loop.ts —— agent 的核心流程：用 LangGraph 的 StateGraph 搭一个四节点小图，
 //   顶替之前手写的 for 循环，语义完全对齐：
+//     prepareContext —— 装配这一轮需要的上下文：取短期记忆历史、格式化当前这句话
+//                        （单聊/群聊差异只在这一步体现）、拉长期记忆文本，写进 state。
 //     llmCall  —— 带 tools 调模型。模型直接给文本就记下 reply，图走向 END；
 //                  模型给 tool_calls 就原样记进 messages，转去 tools 节点。
 //     tools    —— 本地并发执行上一步的 tool_calls，结果拼回 messages，turnCount+1。
@@ -9,15 +11,15 @@
 //                  不带聊天历史、不带 tools，逼模型只根据这些信息收尾。
 //   以后想让模型连续调多轮工具，还是只改 MAX_TOOL_TURNS 这个数字，不用动图结构。
 //
-// 记忆：只存「短期记忆」（最近若干条消息），键用现成的 sessionKey(ctx.event)，
-// 和状态机共享同一套「每人每场景」隔离粒度。长期记忆（数据库、跨会话）本次不做。
+// 记忆：短期记忆（最近若干条消息）+ 长期记忆占位，单聊/群聊的差异全部收在
+// agent/context.ts 里（memoryKey / formatSpeakerContent / buildLongTermContextText），
+// 本文件的节点只管调用，不用各自判断 event.type。
 
 import { StateGraph, StateSchema, ReducedValue, START, END } from "@langchain/langgraph";
 import { z } from "zod";
 import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
-import type { BotEvent } from "../events/registry.js";
-import { sessionKey } from "../session/key.js";
+import { memoryKey, formatSpeakerContent, buildLongTermContextText } from "./context.js";
 import { callModelWithTools } from "./client.js";
 import { runTool, toolSchemas } from "./registry.js";
 import { sqliteMemoryStore } from "./memory/sqlite.js";
@@ -52,23 +54,12 @@ const FINAL_REPLY_SYSTEM_PROMPT = `
 // 工具调用最多几轮。1 表示：调一次工具就必须收尾，不允许模型看完工具结果又申请下一轮工具。
 const MAX_TOOL_TURNS = 1;
 
-// 记忆专用的会话键：和状态机用的 sessionKey() 故意不同粒度。
-// sessionKey() 群聊分支带 authorOpenid（群里各人独立锁状态机，互不干扰），
-// 但记忆要的是"整群共享一份窗口"（AI 能看到群里其他人跟机器人说过什么），
-// 所以这里把群聊的 authorOpenid 去掉，只保留 group:<groupOpenid>；
-// 单聊没有这个问题，直接复用 sessionKey() 的结果。
-// 不改 sessionKey() 本身：它同时被 session/runner.ts 的状态机锁定逻辑复用，
-// 那边需要的仍然是"每人每群"的隔离粒度，两者语义不同，不能合并成一个函数。
-function memoryKey(event: BotEvent): string {
-  if (event.type === "GROUP_AT_MESSAGE_CREATE") {
-    return `group:${event.groupOpenid}`;
-  }
-  return sessionKey(event);
-}
-
 // messages 用累加式的 ReducedValue：每个节点只管返回"这一步新增的消息"，
 // 图会自动 concat 到已有 messages 后面——不用像原来手写循环那样自己 push。
 // ctx 用 z.custom 只当类型标记，不做运行时校验（本来就是进程内对象，不需要校验）。
+// longTermContext：长期记忆注入文本，prepareContext 节点写入，llmCall/finalizeNode 读取——
+// 单聊/群聊的长期记忆内容来源不同，但对这里来说只是一个字符串字段，差异全在
+// agent/context.ts 的 buildLongTermContextText 内部（本次占位，恒为空字符串）。
 const AgentState = new StateSchema({
   messages: new ReducedValue(z.custom<ChatMessage[]>(), {
     reducer: (current: ChatMessage[], next: ChatMessage[]) => [...current, ...next],
@@ -78,40 +69,39 @@ const AgentState = new StateSchema({
   history: z.custom<ChatMessage[]>(),
   turnCount: z.number().default(0),
   reply: z.string().nullable().default(null),
+  longTermContext: z.string().default(""),
 });
 
 type AgentStateT = typeof AgentState.State;
 type AgentUpdateT = typeof AgentState.Update;
 
-// 群聊身份提示：group 场景下点出"历史消息带昵称前缀"这件事，以及"当前是谁在说话"，
-// 让模型别把昵称当正文、也别把这轮发言人和历史里其他人搞混。单聊没有这个问题，返回空字符串。
-// llmCall 的 plain 分支和 synthesizeFinalReply 都要用，提出来共用一份，避免两处措辞跑偏。
-function buildGroupContextText(event: BotEvent): string {
-  if (event.type !== "GROUP_AT_MESSAGE_CREATE") {
-    return "";
-  }
-  return `
-群聊历史消息格式如下：
-「用户名：消息内容」
+// 节点零：图的新起点。把"这一轮需要哪些上下文"集中在这一步准备好——
+// 取短期记忆历史（由 runAgentTurn 传入 state.history）、把当前这句话格式化
+// （群聊拼昵称前缀，单聊原样），拉长期记忆文本，拼出 messages 的初始内容。
+// 后面的节点只管读 state，不用各自判断"是不是群聊"。
+async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
+  const event = state.ctx.event;
+  const formattedUserText = formatSpeakerContent(state.userText, event.authorName, event);
+  const longTermContext = await buildLongTermContextText(event);
 
-其中：
-- 用户名表示真实发送者身份。
-- 每条历史消息前面的用户名必须作为该消息的发送者信息理解。
-- 不要把用户名当作消息正文的一部分。
-- 在回答时，需要结合消息发送者的身份判断上下文。
+  const userMessage: ChatMessage = { role: "user", content: formattedUserText };
+  const initialMessages: ChatMessage[] = [
+    { role: "system", content: AGENT_SYSTEM_PROMPT },
+    ...state.history,
+    userMessage,
+  ];
 
-当前说话的人是：${event.authorName}
-`;
+  return { messages: initialMessages, longTermContext };
 }
 
-// 轮次用完但 reply 还是空时的收尾：单独拼一段提示词——人设 + 用户原始需求 +
+// 轮次用完但 reply 还是空时的收尾：单独拼一段提示词——人设 + 长期记忆 + 用户原始需求 +
 // 工具结果——不带聊天历史、不带 tools，逼模型只根据这些信息给出一段干净的最终回复。
 // 单开一个函数是因为这段提示词本身有点长，混在节点函数里会显得臃肿。
 async function synthesizeFinalReply(
   userText: string,
   history: ChatMessage[],
   toolResults: ChatMessage[],
-  event: BotEvent,
+  longTermContext: string,
 ): Promise<string> {
   const historyText =
     history.length === 0
@@ -124,10 +114,8 @@ async function synthesizeFinalReply(
     .map((msg, i) => `工具结果 ${i + 1}：${msg.content ?? "(无内容)"}`)
     .join("\n\n");
 
-  const groupContextText = buildGroupContextText(event);
-
   const prompt = `${FINAL_REPLY_SYSTEM_PROMPT}
-${groupContextText}
+${longTermContext}
 以下是最近的对话记录（供参考上下文）：
 ${historyText}
 
@@ -160,10 +148,12 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
 
   if (response.tool_calls === undefined || response.tool_calls.length === 0) {
     const t1 = debugTime("llmCall: 无工具调用，跑第二次普通调用开始（换人设提示词 + agentModel）");
-    const groupContextText = buildGroupContextText(state.ctx.event);
+    const systemContent = state.longTermContext
+      ? `${DEFAULT_SYSTEM_PROMPT}\n${state.longTermContext}`
+      : DEFAULT_SYSTEM_PROMPT;
     const plain = await callModelWithTools(
       [
-        { role: "system", content: `${DEFAULT_SYSTEM_PROMPT}${groupContextText}` },
+        { role: "system", content: systemContent },
         ...state.messages.slice(1),
       ],
       undefined,
@@ -216,7 +206,7 @@ async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
   // 部分喂给 synthesizeFinalReply，和原来 allToolMessages 的口径一致。
   const toolResults = state.messages.filter((msg) => msg.role === "tool");
   const t0 = debugTime("finalizeNode: synthesizeFinalReply 开始（enableThinking=true，重点怀疑对象）");
-  const reply = await synthesizeFinalReply(state.userText, state.history, toolResults, state.ctx.event);
+  const reply = await synthesizeFinalReply(state.userText, state.history, toolResults, state.longTermContext);
   debugTime("finalizeNode: synthesizeFinalReply 结束", t0);
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
@@ -232,10 +222,12 @@ function afterTools(state: AgentStateT): "llmCall" | "finalize" {
 }
 
 const agentGraph = new StateGraph(AgentState)
+  .addNode("prepareContext", prepareContext)
   .addNode("llmCall", llmCall)
   .addNode("tools", toolsNode)
   .addNode("finalize", finalizeNode)
-  .addEdge(START, "llmCall")
+  .addEdge(START, "prepareContext")
+  .addEdge("prepareContext", "llmCall")
   .addConditionalEdges("llmCall", afterLlmCall, ["tools", END])
   .addConditionalEdges("tools", afterTools, ["llmCall", "finalize"])
   .addEdge("finalize", END)
@@ -250,15 +242,10 @@ export async function runAgentTurn(
   const key = memoryKey(ctx.event);
   const history = await sqliteMemoryStore.get(key);
 
-  const userMessage: ChatMessage = { role: "user", content: userText };
-  const initialMessages: ChatMessage[] = [
-    { role: "system", content: AGENT_SYSTEM_PROMPT },
-    ...history,
-    userMessage,
-  ];
-
+  // messages 初始值留空：prepareContext 节点是图的新起点，负责把
+  // [AGENT_SYSTEM_PROMPT, ...history, 格式化后的 userMessage] 拼好写进 messages。
   const result = await agentGraph.invoke({
-    messages: initialMessages,
+    messages: [],
     ctx,
     userText,
     history,

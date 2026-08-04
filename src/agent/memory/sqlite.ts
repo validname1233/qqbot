@@ -58,10 +58,11 @@ const insertStmt = db.prepare(`
 // 只取最近 MAX_MESSAGES 条：按 id 降序排（最新的在前），LIMIT 截断，然后在应用层再反转回正序。
 // 为什么不直接 ORDER BY id ASC LIMIT？因为 SQLite 的 LIMIT 是"取前 N 行"，如果升序取就是最老的 N 条，
 // 而我们要的是最新的 N 条，所以必须先降序 LIMIT、再反转。
-// 多查了 author_name：群聊场景整群共享一份窗口，历史里混着不同成员的发言，
-// 不带名字模型会把大家的话都当成同一个"user"分不清是谁说的。
+// 群聊场景的"昵称：内容"格式化已经在写入时做过（agent/context.ts 的 formatSpeakerContent，
+// 由 agent/loop.ts 的 prepareContext 节点调用），content 落库时已经带前缀，
+// 这里原样读出即可，不用再按 key 是否群聊二次加工。
 const getStmt = db.prepare(
-  `SELECT role, content, tool_calls, tool_call_id, author_name
+  `SELECT role, content, tool_calls, tool_call_id
    FROM short_term_messages
    WHERE key = ?
    ORDER BY id DESC
@@ -70,11 +71,6 @@ const getStmt = db.prepare(
 
 const deleteStmt = db.prepare("DELETE FROM short_term_messages WHERE key = ?");
 
-// 群聊 key 的前缀（对应 session/key.ts 里 sessionKey() 的拼法）。
-// 只有群聊才需要在 content 里点出发言人昵称——单聊的 key 本身已经唯一确定了发言人，
-// 画蛇添足反而给模型添噪音。
-const GROUP_KEY_PREFIX = "group:";
-
 export const sqliteMemoryStore: MemoryStore = {
   async get(key: string): Promise<ChatMessage[]> {
     const rows = getStmt.all(key, MAX_MESSAGES) as Array<{
@@ -82,24 +78,14 @@ export const sqliteMemoryStore: MemoryStore = {
       content: string | null;
       tool_calls: string | null;
       tool_call_id: string | null;
-      author_name: string | null;
     }>;
-    const isGroup = key.startsWith(GROUP_KEY_PREFIX);
     // 降序取出来的，要反转回正序（旧消息在前、新消息在后）
-    return rows.reverse().map((row) => {
-      // 群聊场景下把 user 消息格式化成"昵称：内容"，让模型分清历史里谁说了什么；
-      // 其它角色（assistant/tool/system）和单聊场景都不加前缀。
-      const content =
-        isGroup && row.role === "user" && row.author_name
-          ? `${row.author_name}：${row.content ?? ""}`
-          : row.content;
-      return {
-        role: row.role as ChatMessage["role"],
-        content,
-        tool_calls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
-        tool_call_id: row.tool_call_id ?? undefined,
-      };
-    });
+    return rows.reverse().map((row) => ({
+      role: row.role as ChatMessage["role"],
+      content: row.content,
+      tool_calls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
+      tool_call_id: row.tool_call_id ?? undefined,
+    }));
   },
 
   async append(
