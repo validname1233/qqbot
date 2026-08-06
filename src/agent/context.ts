@@ -2,11 +2,13 @@
 // 对外只暴露三个函数，loop.ts 的节点只管调用，不用各自判断 event.type。
 //
 // 三个函数各管一件事，互不依赖：
-//   memoryKey               —— 短期记忆的会话键（隔离粒度）
+//   memoryKey               —— 短期记忆/长期记忆共用的会话键（隔离粒度）
 //   formatSpeakerContent    —— 短期记忆的说话人格式化（写入时做一次，读取不再二次加工）
-//   buildLongTermContextText —— 长期记忆注入文本（本次占位，恒定返回空字符串）
+//   buildLongTermContextText —— 长期记忆注入文本，读 long-term.ts 该 key 下的全部记忆
 
 import type { BotEvent } from "../events/registry.js";
+import { longTermMemoryStore } from "./memory/long-term.js";
+import { pushC2CMessage, pushGroupMessage } from "../qq/messages.js";
 
 // 记忆专用的会话键：和状态机用的 sessionKey() 故意不同粒度。
 // sessionKey() 群聊分支带 authorOpenid（群里各人独立锁状态机，互不干扰），
@@ -36,11 +38,27 @@ export function formatSpeakerContent(
   return `${authorName}：${content}`;
 }
 
-// 长期记忆注入文本。单聊：本人人格画像 + 关键事实；群聊：群公共关键事实
-// （未来可能还有发言者本人的人格画像）。两种场景的内容来源不同，但对调用方
-// 是同一个注入点、同一种字符串形态，因此对外只留一个函数签名，内部将来按
-// event.type 分支取数据源。本次仅占位，恒定返回空字符串——真实实现见
-// docs/long-term-memory-plan.md（该文档的单聊/群聊假设需要在实现时一并更新）。
+// 长期记忆注入文本。单聊/群聊不分支：都是读 memoryKey(event) 对应的全部记忆
+// （硬上限 5 条，见 memory/long-term.ts），格式化成一段 system 文本。
+// 单聊场景下"由XX记录"的 XX 恒等于该用户自己，信息冗余但无害，不必为此单独分支。
 export async function buildLongTermContextText(event: BotEvent): Promise<string> {
-  return "";
+  const memories = await longTermMemoryStore.list(memoryKey(event));
+  if (memories.length === 0) {
+    return "";
+  }
+  const lines = memories.map((m) => `- （由${m.authorName}记录）${m.content}`);
+  return `以下是关于当前对话的长期记忆（可能有助于理解上下文）：\n${lines.join("\n")}`;
+}
+
+// 长期记忆增删的主动通知：单聊推给对应用户，群聊推回对应群。复用现有的主动推送
+// service（pushC2CMessage/pushGroupMessage），不依附于某条消息（不带 msgId），
+// 所以这里不是"回复"，是独立的一条主动消息——和 add_memory/delete_memory 工具
+// return 给模型的确认话术是两件事：return 值会被模型拼进这一轮的最终回复，
+// 这里另外单独发一条，确保"记忆变更"这件事本身有一条明确、格式固定的通知。
+export async function pushMemoryNotice(event: BotEvent, text: string): Promise<void> {
+  if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
+    await pushGroupMessage(event.groupOpenid, text);
+    return;
+  }
+  await pushC2CMessage(event.authorOpenid, text);
 }
