@@ -1,14 +1,15 @@
-// agent/loop.ts —— agent 的核心流程：用 LangGraph 的 StateGraph 搭一个四节点小图，
+// agent/loop.ts —— agent 的核心流程：用 LangGraph 的 StateGraph 搭一个五节点小图，
 //   顶替之前手写的 for 循环，语义完全对齐：
 //     prepareContext —— 装配这一轮需要的上下文：取短期记忆历史、格式化当前这句话
 //                        （单聊/群聊差异只在这一步体现）、拉长期记忆文本，写进 state。
-//     llmCall  —— 带 tools 调模型。模型直接给文本就记下 reply，图走向 END；
-//                  模型给 tool_calls 就原样记进 messages，转去 tools 节点。
-//     tools    —— 本地并发执行上一步的 tool_calls，结果拼回 messages，turnCount+1。
-//                  turnCount 还没到 MAX_TOOL_TURNS 就绕回 llmCall 再来一轮，
-//                  到了上限就转去 finalize。
-//     finalize —— 轮次用完但 reply 还是空：单独拼一段「人设+需求+工具结果」的提示词，
-//                  不带聊天历史、不带 tools，逼模型只根据这些信息收尾。
+//     llmCall       —— 带 tools 调模型，无论结果如何都原样返回，交给条件边路由。
+//     plainReply    —— llmCall 判断出"不需要工具"时走到这里：换成汐汐人设、不带 tools
+//                        再调一次，得到最终回复后直接结束（走 END）。
+//     tools         —— llmCall 判断出"需要工具"时走到这里：本地并发执行 tool_calls，
+//                        结果拼回 messages，turnCount+1。turnCount 还没到上限就绕回
+//                        llmCall 再来一轮，到了上限就转去 finalize。
+//     finalize      —— 轮次用完但 reply 还是空：单独拼一段「人设+需求+工具结果」的提示词，
+//                        不带聊天历史、不带 tools，逼模型只根据这些信息收尾。
 //   以后想让模型连续调多轮工具，还是只改 MAX_TOOL_TURNS 这个数字，不用动图结构。
 //
 // 记忆：短期记忆（最近若干条消息）+ 长期记忆占位，单聊/群聊的差异全部收在
@@ -149,36 +150,35 @@ ${toolResultsText}
   return final.content ?? "（Agent 没有返回内容）";
 }
 
-// 节点一：带 tools 调模型。模型没发起工具调用：说明这问题不需要工具，但刚才那次调用
-// 用的是 AGENT_SYSTEM_PROMPT（纯工具判断人设，不适合直接展示给用户），所以再跑一次
-// 不带 tools 的调用，换成 askAI 那套默认人设（汐汐），让模型正常回答；
-// 发起了工具调用就把这条 assistant 消息记进 messages，交给 tools 节点去执行。
+// 节点一：带 tools 调模型。只负责判断"需不需要工具"，无论结果如何都把 response 原样返回，
+// 交给条件边路由：有 tool_calls → tools 节点；没有 tool_calls → plainReply 节点。
 async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
-  const t0 = debugTime("llmCall: 第一次调用开始（带 tools，判断是否需要工具）");
+  const t0 = debugTime("llmCall: 调用开始（带 tools，判断是否需要工具）");
   const response = await callModelWithTools(state.messages, toolSchemas());
-  debugTime("llmCall: 第一次调用结束", t0);
+  debugTime("llmCall: 调用结束", t0);
 
-  if (response.tool_calls === undefined || response.tool_calls.length === 0) {
-    const t1 = debugTime("llmCall: 无工具调用，跑第二次普通调用开始（换人设提示词 + agentModel）");
-    const systemContent = state.longTermContext
-      ? `${DEFAULT_SYSTEM_PROMPT}\n${state.longTermContext}`
-      : DEFAULT_SYSTEM_PROMPT;
-    const plain = await callFinalReplyModel([
-      { role: "system", content: systemContent },
-      ...state.messages.slice(1),
-    ]);
-    debugTime("llmCall: 第二次普通调用结束", t1);
-    const reply = plain.content ?? "（Agent 没有返回内容）";
-    return { messages: [{ role: "assistant", content: reply }], reply };
-  }
-
-  //console.log("[agent:debug] callModelWithTools response:", JSON.stringify(response, null, 2));
-  
   return {
     messages: [
       { role: "assistant", content: response.content, tool_calls: response.tool_calls },
     ],
   };
+}
+
+// 节点一.五：llmCall 判断出"不需要工具"时走到这里。刚才那次调用用的是 AGENT_SYSTEM_PROMPT
+// （纯工具判断人设，不适合直接展示给用户），所以再跑一次不带 tools 的调用，
+// 换成 askAI 那套默认人设（汐汐），让模型正常回答用户的问题。
+async function plainReply(state: AgentStateT): Promise<AgentUpdateT> {
+  const t0 = debugTime("plainReply: 无工具调用，跑普通调用（换人设提示词 + agentModel）");
+  const systemContent = state.longTermContext
+    ? `${DEFAULT_SYSTEM_PROMPT}\n${state.longTermContext}`
+    : DEFAULT_SYSTEM_PROMPT;
+  const plain = await callFinalReplyModel([
+    { role: "system", content: systemContent },
+    ...state.messages.slice(1),
+  ]);
+  debugTime("plainReply: 普通调用结束", t0);
+  const reply = plain.content ?? "（Agent 没有返回内容）";
+  return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
 // 节点二：本地并发执行上一步模型给的 tool_calls。结果拼回 messages，turnCount+1。
@@ -218,9 +218,17 @@ async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
-// 路由一：llmCall 之后——reply 已经有了（模型没调工具）就直接结束，否则去执行工具。
-function afterLlmCall(state: AgentStateT): "tools" | typeof END {
-  return state.reply === null ? "tools" : END;
+// 路由一：llmCall 之后——检查最后一条消息的 tool_calls：
+//   - 轮次已到上限 → finalize（兜底）
+//   - 没有 tool_calls → plainReply（换人设直接回答）
+//   - 有 tool_calls → tools（执行工具）
+function afterLlmCall(state: AgentStateT): "plainReply" | "tools" | "finalize" {
+  if (state.turnCount >= MAX_TOOL_TURNS) {
+    return "finalize";
+  }
+  const lastMessage = state.messages[state.messages.length - 1];
+  const toolCalls = lastMessage?.tool_calls;
+  return toolCalls === undefined || toolCalls.length === 0 ? "plainReply" : "tools";
 }
 
 // 路由二：tools 之后——轮次还没到上限就回 llmCall 再问模型一次，到上限就去 finalize 收尾。
@@ -231,11 +239,13 @@ function afterTools(state: AgentStateT): "llmCall" | "finalize" {
 const agentGraph = new StateGraph(AgentState)
   .addNode("prepareContext", prepareContext)
   .addNode("llmCall", llmCall)
+  .addNode("plainReply", plainReply)
   .addNode("tools", toolsNode)
   .addNode("finalize", finalizeNode)
   .addEdge(START, "prepareContext")
   .addEdge("prepareContext", "llmCall")
-  .addConditionalEdges("llmCall", afterLlmCall, ["tools", END])
+  .addConditionalEdges("llmCall", afterLlmCall, ["plainReply", "tools", "finalize"])
+  .addEdge("plainReply", END)
   .addConditionalEdges("tools", afterTools, ["llmCall", "finalize"])
   .addEdge("finalize", END)
   .compile();
