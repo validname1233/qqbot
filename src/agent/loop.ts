@@ -94,9 +94,23 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   return { messages: initialMessages, longTermContext };
 }
 
+// 统一"直接生成最终回复"这一类调用的入口：不带 tools，固定用 agentModel + enableThinking=true。
+// llmCall 的纯文本分支和下面的 synthesizeFinalReply 共用这个函数，调用方只管拼好 messages，
+// 不用在每个调用点重复摆一遍 model/enableThinking 这些固定参数——这不是重新实现请求发送，
+// 底层仍走 callModelWithTools（鉴权、fetch、错误处理都在那一处，不重复造轮子），
+// 这里只是把"这类调用固定传什么参数"收进一个有名字的函数，调用点读起来更清楚。
+async function callFinalReplyModel(messages: ChatMessage[]): Promise<ChatMessage> {
+  return callModelWithTools(messages, undefined, config.agentModel, true);
+}
+
 // 轮次用完但 reply 还是空时的收尾：单独拼一段提示词——人设 + 长期记忆 + 用户原始需求 +
 // 工具结果——不带聊天历史、不带 tools，逼模型只根据这些信息给出一段干净的最终回复。
 // 单开一个函数是因为这段提示词本身有点长，混在节点函数里会显得臃肿。
+//
+// 系统提示词和动态内容必须分开成两条消息：之前把 FINAL_REPLY_SYSTEM_PROMPT 和历史/需求/
+// 工具结果整段拼成一条 role:"user" 消息发出去，等于把"人设+格式限制"这些本该受更高优先级
+// 保护的系统指令，降级成了模型眼里"用户说的话"——指令层级一降，模型更容易被问出/复述这段
+// 系统提示词。改成 role:"system" 单独一条，配合下面 role:"user" 只放会变化的上下文数据。
 async function synthesizeFinalReply(
   userText: string,
   history: ChatMessage[],
@@ -114,9 +128,11 @@ async function synthesizeFinalReply(
     .map((msg, i) => `工具结果 ${i + 1}：${msg.content ?? "(无内容)"}`)
     .join("\n\n");
 
-  const prompt = `${FINAL_REPLY_SYSTEM_PROMPT}
-${longTermContext}
-以下是最近的对话记录（供参考上下文）：
+  const systemContent = longTermContext
+    ? `${FINAL_REPLY_SYSTEM_PROMPT}\n${longTermContext}`
+    : FINAL_REPLY_SYSTEM_PROMPT;
+
+  const userContent = `以下是最近的对话记录（供参考上下文）：
 ${historyText}
 
 用户现在想要实现的需求是：${userText}
@@ -126,14 +142,10 @@ ${toolResultsText}
 
 请你根据以上对话记录和工具结果，直接给用户一段完整、自然的最终回复，不要再调用任何工具。`;
 
-  // 收尾话术用 agentModel：不传 tools（undefined），换成更强的模型，
-  // 并打开 enableThinking，让模型多想一步再给最终回复。
-  const final = await callModelWithTools(
-    [{ role: "user", content: prompt }],
-    undefined,
-    config.agentModel,
-    true,
-  );
+  const final = await callFinalReplyModel([
+    { role: "system", content: systemContent },
+    { role: "user", content: userContent },
+  ]);
   return final.content ?? "（Agent 没有返回内容）";
 }
 
@@ -151,15 +163,10 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
     const systemContent = state.longTermContext
       ? `${DEFAULT_SYSTEM_PROMPT}\n${state.longTermContext}`
       : DEFAULT_SYSTEM_PROMPT;
-    const plain = await callModelWithTools(
-      [
-        { role: "system", content: systemContent },
-        ...state.messages.slice(1),
-      ],
-      undefined,
-      config.agentModel,
-      true,
-    );
+    const plain = await callFinalReplyModel([
+      { role: "system", content: systemContent },
+      ...state.messages.slice(1),
+    ]);
     debugTime("llmCall: 第二次普通调用结束", t1);
     const reply = plain.content ?? "（Agent 没有返回内容）";
     return { messages: [{ role: "assistant", content: reply }], reply };
