@@ -129,11 +129,14 @@ async function synthesizeFinalReply(
     .map((msg, i) => `工具结果 ${i + 1}：${msg.content ?? "(无内容)"}`)
     .join("\n\n");
 
-  const systemContent = longTermContext
-    ? `${FINAL_REPLY_SYSTEM_PROMPT}\n${longTermContext}`
-    : FINAL_REPLY_SYSTEM_PROMPT;
+  const userContentParts: string[] = [];
 
-  const userContent = `以下是最近的对话记录（供参考上下文）：
+  if (longTermContext) {
+    userContentParts.push(longTermContext);
+    userContentParts.push("");
+  }
+
+  userContentParts.push(`以下是最近的对话记录（供参考上下文）：
 ${historyText}
 
 用户现在想要实现的需求是：${userText}
@@ -141,11 +144,11 @@ ${historyText}
 以下是为完成这个需求而调用工具得到的结果：
 ${toolResultsText}
 
-请你根据以上对话记录和工具结果，直接给用户一段完整、自然的最终回复，不要再调用任何工具。`;
+请你根据以上对话记录和工具结果，直接给用户一段完整、自然的最终回复，不要再调用任何工具。`);
 
   const final = await callFinalReplyModel([
-    { role: "system", content: systemContent },
-    { role: "user", content: userContent },
+    { role: "system", content: FINAL_REPLY_SYSTEM_PROMPT },
+    { role: "user", content: userContentParts.join("\n") },
   ]);
   return final.content ?? "（Agent 没有返回内容）";
 }
@@ -169,13 +172,20 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
 // 换成 askAI 那套默认人设（汐汐），让模型正常回答用户的问题。
 async function plainReply(state: AgentStateT): Promise<AgentUpdateT> {
   const t0 = debugTime("plainReply: 无工具调用，跑普通调用（换人设提示词 + agentModel）");
-  const systemContent = state.longTermContext
-    ? `${DEFAULT_SYSTEM_PROMPT}\n${state.longTermContext}`
-    : DEFAULT_SYSTEM_PROMPT;
-  const plain = await callFinalReplyModel([
-    { role: "system", content: systemContent },
-    ...state.messages.slice(1),
-  ]);
+
+  // state.messages 结构：[0] AGENT_SYSTEM_PROMPT, [1..n-1] history, [n] 当前用户消息, [n+1] 刚才 llmCall 返回的 assistant 消息
+  // 要构造的新 messages：[0] 汐汐人设的 system, [1] 长期记忆（如果有）+ history + 当前用户消息
+  const historyAndUser = state.messages.slice(1, -1); // 去掉开头的 AGENT_SYSTEM_PROMPT 和结尾的 assistant 消息
+
+  const messages: ChatMessage[] = [{ role: "system", content: DEFAULT_SYSTEM_PROMPT }];
+
+  if (state.longTermContext) {
+    messages.push({ role: "user", content: state.longTermContext });
+  }
+
+  messages.push(...historyAndUser);
+
+  const plain = await callFinalReplyModel(messages);
   debugTime("plainReply: 普通调用结束", t0);
   const reply = plain.content ?? "（Agent 没有返回内容）";
   return { messages: [{ role: "assistant", content: reply }], reply };
