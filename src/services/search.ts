@@ -39,7 +39,7 @@ export async function tavilySearch(
       search_depth: searchDepth,
       chunks_per_source: 3,
       max_results: maxResults,
-      time_range: null,
+      time_range: "month",
       include_answer: false,
       include_raw_content: false,
       include_images: false,
