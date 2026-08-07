@@ -5,7 +5,7 @@
 // （只回数字或"无匹配"）就够，避免多嵌一层工具调用的复杂度。
 
 import type { Tool } from "../tool.js";
-import { callModel } from "../client.js";
+import { callModel } from "../../services/model.js";
 import { memoryKey, pushMemoryNotice } from "../context.js";
 import { longTermMemoryStore, type LongTermMemory } from "../memory/long-term.js";
 

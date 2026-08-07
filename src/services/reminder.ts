@@ -8,7 +8,7 @@
 //   （若在 handle 里 await 睡到点，用户会一直收不到确认，还会阻塞整条处理链。）
 
 import type { CommandService, MessageContext } from "../types.js";
-import { askAI } from "./ai.js";
+import { callModel } from "./model.js";
 import { pushC2CMessage, pushGroupMessage } from "../qq/messages.js";
 
 const MIN_SECONDS = 10;
@@ -47,25 +47,43 @@ export function scheduleReminder(
     if (event.type === "C2C_MESSAGE_CREATE") {
       const openid = event.authorOpenid; // 单聊的 authorOpenid 才是 user_openid
       return async () => {
-        const reply = await askAI(
-          `
+        const response = await callModel(
+          [
+            { role: "system", content: REMINDER_SYSTEM_PROMPT },
+            {
+              role: "user",
+              content: `
           定时任务已经走完了你设定的${seconds}秒，现在时间到了，用户需要立刻去做的具体事情是[${description}]，请你根据这个信息，用符合你雌小鬼鲸鱼娘的身份来发出提醒，必须以嫌弃或调侃的语气开头，比如“嘁，终于到点了”或“哈？磨蹭这么久”，然后直接、清晰、毫不含糊地告诉用户现在必须执行那个任务，不能只重复描述而要带有催促执行的意味，最后再补一句傲娇的叮嘱或威胁，比如“做不好可别怪我没提醒你”之类，整段回复必须连贯成一个自然段落，不允许换行、列表或任何Markdown格式，如果任务涉及知识内容可以在催促后附带一句简短实用建议，但主要目标是让用户立刻行动起来。
           `,
-          REMINDER_SYSTEM_PROMPT,
+            },
+          ],
+          undefined,
+          undefined,
+          undefined,
+          "reminder:c2c",
         );
-        await pushC2CMessage(openid, "时间到啦！" + reply);
+        await pushC2CMessage(openid, "时间到啦！" + (response.content ?? ""));
       };
     }
     if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
       const groupOpenid = event.groupOpenid;
       return async () => {
-        const reply = await askAI(
-          `
+        const response = await callModel(
+          [
+            { role: "system", content: REMINDER_SYSTEM_PROMPT },
+            {
+              role: "user",
+              content: `
           定时任务已经走完了你设定的${seconds}秒，现在时间到了，用户需要立刻去做的具体事情是[${description}]，请你根据这个信息，用符合你雌小鬼鲸鱼娘的身份来发出提醒，必须以嫌弃或调侃的语气开头，比如“嘁，终于到点了”或“哈？磨蹭这么久”，然后直接、清晰、毫不含糊地告诉用户现在必须执行那个任务，不能只重复描述而要带有催促执行的意味，最后再补一句傲娇的叮嘱或威胁，比如“做不好可别怪我没提醒你”之类，整段回复必须连贯成一个自然段落，不允许换行、列表或任何Markdown格式，如果任务涉及知识内容可以在催促后附带一句简短实用建议，但主要目标是让用户立刻行动起来。
           `,
-          REMINDER_SYSTEM_PROMPT,
+            },
+          ],
+          undefined,
+          undefined,
+          undefined,
+          "reminder:group",
         );
-        await pushGroupMessage(groupOpenid, "时间到啦！" + reply);
+        await pushGroupMessage(groupOpenid, "时间到啦！" + (response.content ?? ""));
       };
     }
     return null; // 未知事件类型：本功能不支持，交由下面拒绝

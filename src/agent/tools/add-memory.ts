@@ -4,7 +4,7 @@
 // （偏原文转述）不一样，混在同一次输出里容易互相干扰，拆开各自更可控。
 
 import type { Tool } from "../tool.js";
-import { callModel } from "../client.js";
+import { callModel } from "../../services/model.js";
 import { memoryKey, pushMemoryNotice } from "../context.js";
 import { longTermMemoryStore } from "../memory/long-term.js";
 

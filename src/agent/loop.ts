@@ -21,11 +21,10 @@ import { z } from "zod";
 import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
 import { memoryKey, formatSpeakerContent, buildLongTermContextText } from "./context.js";
-import { callModel } from "./client.js";
+import { callModel, DEFAULT_SYSTEM_PROMPT } from "../services/model.js";
 import { runTool, toolSchemas } from "./registry.js";
 import { sqliteMemoryStore } from "./memory/sqlite.js";
 import type { ChatMessage } from "./types.js";
-import { DEFAULT_SYSTEM_PROMPT } from "../services/ai.js";
 
 // llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务——
 // 真正要说给用户听的话，由 synthesizeFinalReply 那条带人设的提示词负责。

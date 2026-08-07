@@ -9,6 +9,7 @@ import { signValidation, verifySignature } from "./qq/crypto.js";
 import { parseEvent } from "./events/registry.js";
 import type { RawEvent } from "./events/raw.js";
 import { dispatch } from "./events/dispatcher.js";
+import { initializeNewsCron } from "./services/news/cron.js";
 
 // 本地监听端口。只绑 127.0.0.1，不对公网暴露——外面只能经 nginx 进来。
 const PORT = 3000;
@@ -135,6 +136,10 @@ const server = createServer((req, res) => {
     }
   });
 });
+
+// 启动时把数据库里已开启的群新闻订阅重新挂载成 cron 任务，保证进程重启后
+// 不需要用户重新 /新闻订阅 开。放在 listen 之前——先把定时任务准备好，再对外接收流量。
+initializeNewsCron();
 
 server.listen(PORT, HOST, () => {
   console.log(`[webhook] 监听 http://${HOST}:${PORT}（经 nginx 反代对外提供 HTTPS）`);
