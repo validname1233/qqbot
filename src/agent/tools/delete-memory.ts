@@ -5,7 +5,7 @@
 // （只回数字或"无匹配"）就够，避免多嵌一层工具调用的复杂度。
 
 import type { Tool } from "../tool.js";
-import { callModelWithTools } from "../client.js";
+import { callModel } from "../client.js";
 import { memoryKey, pushMemoryNotice } from "../context.js";
 import { longTermMemoryStore, type LongTermMemory } from "../memory/long-term.js";
 
@@ -26,9 +26,13 @@ async function matchMemoryId(
   query: string,
   candidates: LongTermMemory[],
 ): Promise<number | null> {
-  const response = await callModelWithTools([
-    { role: "user", content: buildMatchPrompt(query, candidates) },
-  ]);
+  const response = await callModel(
+    [{ role: "user", content: buildMatchPrompt(query, candidates) }],
+    undefined,
+    undefined,
+    undefined,
+    "delete_memory:matchMemoryId",
+  );
   const text = response.content?.trim() ?? "";
   const id = Number(text);
   if (!Number.isInteger(id)) {

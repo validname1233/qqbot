@@ -21,20 +21,11 @@ import { z } from "zod";
 import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
 import { memoryKey, formatSpeakerContent, buildLongTermContextText } from "./context.js";
-import { callModelWithTools } from "./client.js";
+import { callModel } from "./client.js";
 import { runTool, toolSchemas } from "./registry.js";
 import { sqliteMemoryStore } from "./memory/sqlite.js";
 import type { ChatMessage } from "./types.js";
 import { DEFAULT_SYSTEM_PROMPT } from "../services/ai.js";
-
-// 调试用计时打点：不传 startedAt 就只打个带时间戳的开始标记，返回值留着传给"结束"那次调用；
-// 传了 startedAt 就顺便算出耗时。排查"哪个环节慢"专用，定位到瓶颈后可以整段删掉。
-function debugTime(label: string, startedAt?: number): number {
-  const now = Date.now();
-  const elapsed = startedAt === undefined ? "" : ` (+${now - startedAt}ms)`;
-  console.log(`[agent:debug] ${new Date(now).toISOString()} ${label}${elapsed}`);
-  return now;
-}
 
 // llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务——
 // 真正要说给用户听的话，由 synthesizeFinalReply 那条带人设的提示词负责。
@@ -95,15 +86,6 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   return { messages: initialMessages, longTermContext };
 }
 
-// 统一"直接生成最终回复"这一类调用的入口：不带 tools，固定用 agentModel + enableThinking=true。
-// llmCall 的纯文本分支和下面的 synthesizeFinalReply 共用这个函数，调用方只管拼好 messages，
-// 不用在每个调用点重复摆一遍 model/enableThinking 这些固定参数——这不是重新实现请求发送，
-// 底层仍走 callModelWithTools（鉴权、fetch、错误处理都在那一处，不重复造轮子），
-// 这里只是把"这类调用固定传什么参数"收进一个有名字的函数，调用点读起来更清楚。
-async function callFinalReplyModel(messages: ChatMessage[]): Promise<ChatMessage> {
-  return callModelWithTools(messages, undefined, config.agentModel, true);
-}
-
 // 轮次用完但 reply 还是空时的收尾：单独拼一段提示词——人设 + 长期记忆 + 用户原始需求 +
 // 工具结果——不带聊天历史、不带 tools，逼模型只根据这些信息给出一段干净的最终回复。
 // 单开一个函数是因为这段提示词本身有点长，混在节点函数里会显得臃肿。
@@ -146,19 +128,23 @@ ${toolResultsText}
 
 请你根据以上对话记录和工具结果，直接给用户一段完整、自然的最终回复，不要再调用任何工具。`);
 
-  const final = await callFinalReplyModel([
-    { role: "system", content: FINAL_REPLY_SYSTEM_PROMPT },
-    { role: "user", content: userContentParts.join("\n") },
-  ]);
+  const final = await callModel(
+    [
+      { role: "system", content: FINAL_REPLY_SYSTEM_PROMPT },
+      { role: "user", content: userContentParts.join("\n") },
+    ],
+    undefined,
+    config.agentModel,
+    true,
+    "finalizeNode",
+  );
   return final.content ?? "（Agent 没有返回内容）";
 }
 
 // 节点一：带 tools 调模型。只负责判断"需不需要工具"，无论结果如何都把 response 原样返回，
 // 交给条件边路由：有 tool_calls → tools 节点；没有 tool_calls → plainReply 节点。
 async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
-  const t0 = debugTime("llmCall: 调用开始（带 tools，判断是否需要工具）");
-  const response = await callModelWithTools(state.messages, toolSchemas());
-  debugTime("llmCall: 调用结束", t0);
+  const response = await callModel(state.messages, toolSchemas(), undefined, undefined, "llmCall");
 
   return {
     messages: [
@@ -171,8 +157,6 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
 // （纯工具判断人设，不适合直接展示给用户），所以再跑一次不带 tools 的调用，
 // 换成 askAI 那套默认人设（汐汐），让模型正常回答用户的问题。
 async function plainReply(state: AgentStateT): Promise<AgentUpdateT> {
-  const t0 = debugTime("plainReply: 无工具调用，跑普通调用（换人设提示词 + agentModel）");
-
   // state.messages 结构：[0] AGENT_SYSTEM_PROMPT, [1..n-1] history, [n] 当前用户消息, [n+1] 刚才 llmCall 返回的 assistant 消息
   // 要构造的新 messages：[0] 汐汐人设的 system, [1] 长期记忆（如果有）+ history + 当前用户消息
   const historyAndUser = state.messages.slice(1, -1); // 去掉开头的 AGENT_SYSTEM_PROMPT 和结尾的 assistant 消息
@@ -185,8 +169,7 @@ async function plainReply(state: AgentStateT): Promise<AgentUpdateT> {
 
   messages.push(...historyAndUser);
 
-  const plain = await callFinalReplyModel(messages);
-  debugTime("plainReply: 普通调用结束", t0);
+  const plain = await callModel(messages, undefined, undefined, undefined, "plainReply");
   const reply = plain.content ?? "（Agent 没有返回内容）";
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
@@ -197,10 +180,8 @@ async function toolsNode(state: AgentStateT): Promise<AgentUpdateT> {
   const lastMessage = state.messages[state.messages.length - 1];
   const toolCalls = lastMessage?.tool_calls ?? [];
 
-  const tNode = debugTime(`toolsNode: 开始并发执行 ${toolCalls.length} 个工具`);
   const toolMessages = await Promise.all(
     toolCalls.map(async (call): Promise<ChatMessage> => {
-      const tCall = debugTime(`toolsNode: 工具 ${call.function.name} 开始`);
       let args: Record<string, unknown>;
       try {
         args = JSON.parse(call.function.arguments) as Record<string, unknown>;
@@ -208,11 +189,9 @@ async function toolsNode(state: AgentStateT): Promise<AgentUpdateT> {
         args = {};
       }
       const result = await runTool(call.function.name, args, state.ctx);
-      debugTime(`toolsNode: 工具 ${call.function.name} 结束`, tCall);
       return { role: "tool", content: result, tool_call_id: call.id };
     }),
   );
-  debugTime("toolsNode: 全部工具执行完毕", tNode);
 
   return { messages: toolMessages, turnCount: state.turnCount + 1 };
 }
@@ -222,9 +201,7 @@ async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
   // messages[0] 是 system prompt，之后是历史 + 这一轮新增的——挑出 role:"tool" 的
   // 部分喂给 synthesizeFinalReply，和原来 allToolMessages 的口径一致。
   const toolResults = state.messages.filter((msg) => msg.role === "tool");
-  const t0 = debugTime("finalizeNode: synthesizeFinalReply 开始（enableThinking=true，重点怀疑对象）");
   const reply = await synthesizeFinalReply(state.userText, state.history, toolResults, state.longTermContext);
-  debugTime("finalizeNode: synthesizeFinalReply 结束", t0);
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
@@ -264,8 +241,6 @@ export async function runAgentTurn(
   userText: string,
   ctx: MessageContext,
 ): Promise<string> {
-  const tStart = debugTime(`runAgentTurn: 开始（userText=${userText}）`);
-
   const key = memoryKey(ctx.event);
   const history = await sqliteMemoryStore.get(key);
 
@@ -289,6 +264,5 @@ export async function runAgentTurn(
     ...result.messages.slice(1 + history.length),
   );
 
-  debugTime("runAgentTurn: 结束（整轮总耗时）", tStart);
   return reply;
 }

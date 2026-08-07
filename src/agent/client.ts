@@ -18,20 +18,28 @@ interface ChatCompletionResponse {
 // 目前 loop.ts 只在 synthesizeFinalReply 收尾时传 config.agentModel，换一个更强的模型。
 // enableThinking 选填：默认 false（工具调用判断不需要，思考只会拖慢速度）；
 // synthesizeFinalReply 收尾时传 true，让模型多想一步再给最终回复。
-export async function callModelWithTools(
+// content 常常很长（人设回复、finalize 阶段拼的大段提示词回复），日志里全打出来会刷屏，
+// 只截前 150 字，够看出这次回复大致是什么内容即可。
+function truncateContent(content: string | null): string {
+  if (content === null) {
+    return "null";
+  }
+  return content.length > 150 ? `${content.slice(0, 150)}...` : content;
+}
+
+// label：调用方传入的标识（通常是发起调用的节点名，如 "llmCall"/"plainReply"），
+// 纯粹用来在日志里区分"这次调用是谁发起的"，不影响请求内容，不传就打印 "unknown"。
+export async function callModel(
   messages: ChatMessage[],
   tools?: ToolSchema[],
   model: string = config.aiModel,
   enableThinking: boolean = false,
+  label = "unknown",
 ): Promise<ChatMessage> {
-  // 调试用计时打点：和 loop.ts 里的 debugTime 同款格式，独立复制一份是因为
-  // client.ts 不依赖 loop.ts（避免反向 import），这里离真正的网络请求最近，
-  // 能顺带打印 model / enableThinking，直接对应"是不是思考模式拖慢了耗时"这个猜测。
-  // 暂时不用了，先注释掉——留着方便下次排查性能问题时直接取消注释复用。
-  // const t0 = Date.now();
-  // console.log(
-  //   `[agent:debug] ${new Date(t0).toISOString()} callModelWithTools: 发起请求 model=${model} enableThinking=${enableThinking}`,
-  // );
+  const t0 = Date.now();
+  console.debug(
+    `[agent:debug] [${label}] 请求大模型调用 model=${model} enableThinking=${enableThinking} tools=${tools?.length ?? 0} messages=${messages.length}`,
+  );
 
   const response = await fetch(API_URL, {
     method: "POST",
@@ -47,20 +55,29 @@ export async function callModelWithTools(
     }),
   });
 
-  // const t1 = Date.now();
-  // console.log(
-  //   `[agent:debug] ${new Date(t1).toISOString()} callModelWithTools: 收到响应 model=${model} enableThinking=${enableThinking} (+${t1 - t0}ms)`,
-  // );
+  const elapsed = Date.now() - t0;
 
   if (!response.ok) {
     const detail = await response.text();
+    console.debug(`[agent:debug] [${label}] 大模型调用失败 (+${elapsed}ms) status=${response.status} detail=${detail}`);
     throw new Error(`AI 接口返回 ${response.status}: ${detail}`);
   }
 
   const data = (await response.json()) as ChatCompletionResponse;
   const message = data.choices?.[0]?.message;
   if (message === undefined) {
+    console.debug(`[agent:debug] [${label}] 大模型调用失败 (+${elapsed}ms) 返回里没有 message 字段`);
     throw new Error("AI 接口返回里没有 message 字段");
   }
+
+  // tool_calls 只打印名字+参数（不打 id，排查时用不上，反而占地方）。
+  const toolCallsSummary =
+    message.tool_calls === undefined
+      ? "无"
+      : message.tool_calls.map((call) => `${call.function.name}(${call.function.arguments})`).join(", ");
+  console.debug(
+    `[agent:debug] [${label}] 大模型调用返回 (+${elapsed}ms) content=${truncateContent(message.content)} tool_calls=${toolCallsSummary}`,
+  );
+
   return message;
 }

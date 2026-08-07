@@ -4,7 +4,7 @@
 // （偏原文转述）不一样，混在同一次输出里容易互相干扰，拆开各自更可控。
 
 import type { Tool } from "../tool.js";
-import { callModelWithTools } from "../client.js";
+import { callModel } from "../client.js";
 import { memoryKey, pushMemoryNotice } from "../context.js";
 import { longTermMemoryStore } from "../memory/long-term.js";
 
@@ -14,9 +14,13 @@ const MEMORY_INDEX_PROMPT = `请阅读下面这段用户希望被记住的内容
 `;
 
 async function buildMemoryIndex(content: string): Promise<string> {
-  const response = await callModelWithTools([
-    { role: "user", content: MEMORY_INDEX_PROMPT + content },
-  ]);
+  const response = await callModel(
+    [{ role: "user", content: MEMORY_INDEX_PROMPT + content }],
+    undefined,
+    undefined,
+    undefined,
+    "add_memory:buildMemoryIndex",
+  );
   return response.content?.trim() || content;
 }
 

@@ -23,8 +23,8 @@ export function toolSchemas(): ToolSchema[] {
   }));
 }
 
-// 按名字执行一个工具。名字不存在或 run 抛错，都统一在这里兜成"工具执行失败"——
-// 具体原因打日志排查，回给模型的内容保持固定短语，简单可靠。
+// 按名字执行一个工具。名字不存在或 run 抛错，都统一在这里兜成"工具执行失败"，
+// 回给模型的内容保持固定短语，简单可靠。
 export async function runTool(
   name: string,
   args: Record<string, unknown>,
@@ -32,13 +32,11 @@ export async function runTool(
 ): Promise<string> {
   const tool = tools.get(name);
   if (tool === undefined) {
-    console.error(`[agent:tool] 未知工具：${name}`);
     return "工具执行失败";
   }
   try {
     return await tool.run(args, ctx);
-  } catch (err) {
-    console.error(`[agent:tool:${name}] 执行出错:`, err);
+  } catch {
     return "工具执行失败";
   }
 }
