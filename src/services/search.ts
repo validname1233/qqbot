@@ -7,7 +7,7 @@ import { config } from "../config.js";
 const API_URL = "https://api.tavily.com/search";
 
 // 默认「结果少、搜索浅」：够用又省 Tavily 额度，模型需要更多/更深时可自己传参覆盖。
-export const DEFAULT_MAX_RESULTS = 3;
+export const DEFAULT_MAX_RESULTS = 6;
 export const DEFAULT_SEARCH_DEPTH: "basic" | "advanced" = "basic";
 
 export interface SearchResult {
@@ -37,11 +37,11 @@ export async function tavilySearch(
       auto_parameters: false,
       topic: "general",
       search_depth: searchDepth,
-      chunks_per_source: 3,
+      chunks_per_source: 5,
       max_results: maxResults,
       time_range: "month",
       include_answer: false,
-      include_raw_content: false,
+      include_raw_content: true,
       include_images: false,
       include_image_descriptions: false,
       include_favicon: false,
