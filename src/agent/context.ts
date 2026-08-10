@@ -38,11 +38,14 @@ export function formatSpeakerContent(
   return `${authorName}：${content}`;
 }
 
-// 长期记忆注入文本。单聊/群聊不分支：都是读 memoryKey(event) 对应的全部记忆
-// （硬上限 5 条，见 memory/long-term.ts），格式化成一段 system 文本。
+// 长期记忆注入文本。单聊/群聊不分支：都是对 memoryKey(event) 这个 key 下的记忆做
+// RAG 相关度召回（queryText 做 embedding 查询，见 memory/long-term.ts 的 search()），
+// 取 top-K 条格式化成一段 system 文本。
 // 单聊场景下"由XX记录"的 XX 恒等于该用户自己，信息冗余但无害，不必为此单独分支。
-export async function buildLongTermContextText(event: BotEvent): Promise<string> {
-  const memories = await longTermMemoryStore.list(memoryKey(event));
+const TOP_K = 5;
+
+export async function buildLongTermContextText(event: BotEvent, queryText: string): Promise<string> {
+  const memories = await longTermMemoryStore.search(memoryKey(event), queryText, TOP_K);
   if (memories.length === 0) {
     return "";
   }

@@ -40,4 +40,7 @@ export const config = {
   agentModel: optionalEnv("AGENT_MODEL", optionalEnv("AI_MODEL", "Pro/zai-org/GLM-4.7")),
   // Tavily 联网搜索 API key（必填，Agent 的搜索工具要用）。
   tavilyApiKey: requireEnv("TAVILY_API_KEY"),
+  // 智谱 BigModel 的文本嵌入 API key（长期记忆 RAG 召回用，必填）和模型名（选填，有默认）。
+  embeddingApiKey: requireEnv("EMBEDDING_API_KEY"),
+  embeddingModel: optionalEnv("EMBEDDING_MODEL", "embedding-3"),
 } as const;

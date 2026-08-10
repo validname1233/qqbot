@@ -11,6 +11,7 @@ import type { BotEvent } from "./events/registry.js";
 import { reminderService } from "./services/reminder.js";
 import { agentService } from "./services/agent.js";
 import { newsSubscriptionService } from "./services/news/subscription.js";
+import { markdownTestService } from "./services/markdown-test.js";
 import { memoryLogObserver } from "./services/memory-log.js";
 import { runSession } from "./session/runner.js";
 
@@ -30,6 +31,8 @@ registerCommand(reminderService);
 registerCommand(agentService);
 // 群新闻订阅：纯代码写死的固定功能，不经过 Agent/LLM 决策层，用户只能开关/调参。
 registerCommand(newsSubscriptionService);
+// Markdown 测试：测试 QQ 的 Markdown 渲染功能。
+registerCommand(markdownTestService);
 
 // 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
 // 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。

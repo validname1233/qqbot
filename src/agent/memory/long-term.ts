@@ -10,8 +10,12 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MessageAuthor } from "./types.js";
+import { embedText } from "../../services/embedding.js";
 
-const MAX_MEMORIES = 5;
+const MAX_MEMORIES = 30;
+
+// RAG 召回相似度阈值：先给个保守估计，实际效果要跑几轮真实对话再调。
+const MIN_SIMILARITY = 0.35;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_DIR = join(__dirname, "../../../data");
@@ -37,6 +41,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_long_term_key ON long_term_memories(key);
 `);
 
+// 迁移：老数据库文件建表时没有 embedding 列，CREATE TABLE IF NOT EXISTS 不会给已存在的表补列，
+// 所以启动时单独检查一次，不存在就 ALTER TABLE 补上。旧记录迁移后 embedding 是 NULL，
+// 会被 search() 的 WHERE embedding IS NOT NULL 过滤掉，靠 FIFO 淘汰自然替换，不写回填脚本。
+const columns = db.prepare(`PRAGMA table_info(long_term_memories)`).all() as Array<{ name: string }>;
+if (!columns.some((c) => c.name === "embedding")) {
+  db.exec(`ALTER TABLE long_term_memories ADD COLUMN embedding TEXT`);
+}
+
 export interface LongTermMemory {
   id: number;
   authorOpenid: string;
@@ -54,8 +66,9 @@ export interface LongTermMemoryStore {
     content: string,
     memoryIndex: string,
   ): Promise<void>;
-  list(key: string): Promise<LongTermMemory[]>; // 按 updated_at 升序，最旧的在前
+  list(key: string): Promise<LongTermMemory[]>; // 按 updated_at 升序，最旧的在前；delete_memory 候选列表用
   remove(id: number): Promise<void>;
+  search(key: string, queryText: string, topK: number): Promise<LongTermMemory[]>; // RAG 召回专用
 }
 
 const listStmt = db.prepare(
@@ -66,11 +79,29 @@ const listStmt = db.prepare(
 );
 
 const insertStmt = db.prepare(`
-  INSERT INTO long_term_memories (key, author_openid, author_name, content, memory_index, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO long_term_memories (key, author_openid, author_name, content, memory_index, embedding, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const deleteStmt = db.prepare("DELETE FROM long_term_memories WHERE id = ?");
+
+const searchCandidatesStmt = db.prepare(`
+  SELECT id, author_openid, author_name, content, memory_index, embedding, created_at, updated_at
+  FROM long_term_memories
+  WHERE key = ? AND embedding IS NOT NULL
+`);
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
 
 function rowToMemory(row: {
   id: number;
@@ -112,16 +143,45 @@ export const longTermMemoryStore: LongTermMemoryStore = {
     content: string,
     memoryIndex: string,
   ): Promise<void> {
+    const embedding = await embedText(content); // 对原文 content 做 embedding，不是摘要
     const existing = await this.list(key);
     if (existing.length >= MAX_MEMORIES) {
       // existing 按 updated_at 升序，第一条就是最旧的。
       deleteStmt.run(existing[0].id);
     }
     const now = Date.now();
-    insertStmt.run(key, author.openid, author.name, content, memoryIndex, now, now);
+    insertStmt.run(key, author.openid, author.name, content, memoryIndex, JSON.stringify(embedding), now, now);
   },
 
   async remove(id: number): Promise<void> {
     deleteStmt.run(id);
+  },
+
+  async search(key: string, queryText: string, topK: number): Promise<LongTermMemory[]> {
+    const queryEmbedding = await embedText(queryText);
+    const rows = searchCandidatesStmt.all(key) as Array<{
+      id: number;
+      author_openid: string;
+      author_name: string;
+      content: string;
+      memory_index: string;
+      embedding: string;
+      created_at: number;
+      updated_at: number;
+    }>;
+
+    const ranked = rows
+      .map((row) => ({ row, similarity: cosineSimilarity(queryEmbedding, JSON.parse(row.embedding) as number[]) }))
+      .filter(({ similarity }) => similarity >= MIN_SIMILARITY)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, topK);
+
+    console.log(
+      `[长期记忆] 召回 ${ranked.length} 条（按相似度降序）：${ranked
+        .map(({ row, similarity }) => `[${similarity.toFixed(3)}] ${row.memory_index}`)
+        .join("; ")}`,
+    );
+
+    return ranked.map(({ row }) => rowToMemory(row));
   },
 };

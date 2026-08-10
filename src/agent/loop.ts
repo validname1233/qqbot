@@ -73,7 +73,7 @@ type AgentUpdateT = typeof AgentState.Update;
 async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   const event = state.ctx.event;
   const formattedUserText = formatSpeakerContent(state.userText, event.authorName, event);
-  const longTermContext = await buildLongTermContextText(event);
+  const longTermContext = await buildLongTermContextText(event, state.userText);
 
   const userMessage: ChatMessage = { role: "user", content: formattedUserText };
   const initialMessages: ChatMessage[] = [

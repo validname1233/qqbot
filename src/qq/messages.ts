@@ -6,8 +6,9 @@
 
 import { apiRequest } from "./api.js";
 
-// 消息类型。0 = 纯文本。以后发图片/markdown 是别的值。
+// 消息类型。0 = 纯文本；2 = Markdown。以后发图片是别的值。
 const MSG_TYPE_TEXT = 0;
+const MSG_TYPE_MARKDOWN = 2;
 
 // 发送单聊消息（被动回复）。
 // openid：收消息人的 user_openid（来自事件的 authorOpenid）。
@@ -67,6 +68,25 @@ export async function pushGroupMessage(
     body: JSON.stringify({
       content,
       msg_type: MSG_TYPE_TEXT,
+    }),
+  });
+}
+
+// 主动发送群 Markdown 消息。
+// markdownContent：Markdown 格式的内容，支持 ## 标题、**粗体**、换行等（具体格式见官方文档）。
+// 注意：发 Markdown 时 msg_type 必须是 2，且 content 字段必须为空。
+export async function pushGroupMarkdown(
+  groupOpenid: string,
+  markdownContent: string,
+): Promise<void> {
+  await apiRequest(`/v2/groups/${groupOpenid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content: "", // Markdown 消息要求 content 必须为空
+      msg_type: MSG_TYPE_MARKDOWN,
+      markdown: {
+        content: markdownContent,
+      },
     }),
   });
 }
