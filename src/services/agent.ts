@@ -9,11 +9,13 @@ import { setReminderTool } from "../agent/tools/set-reminder.js";
 import { searchTool } from "../agent/tools/search.js";
 import { addMemoryTool } from "../agent/tools/add-memory.js";
 import { deleteMemoryTool } from "../agent/tools/delete-memory.js";
+import { clearAllMemoriesTool } from "../agent/tools/clear-all-memories.js";
 
 registerTool(setReminderTool);
 registerTool(searchTool);
 registerTool(addMemoryTool);
 registerTool(deleteMemoryTool);
+registerTool(clearAllMemoriesTool);
 
 export const agentService: CommandService = {
   name: "Agent",
