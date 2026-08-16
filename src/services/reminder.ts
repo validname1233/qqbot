@@ -10,14 +10,10 @@
 import type { CommandService, MessageContext } from "../types.js";
 import { callModel } from "./model.js";
 import { pushC2CMessage, pushGroupMessage } from "../qq/messages.js";
+import { getSystemPrompt } from "./prompts/builder.js";
 
 const MIN_SECONDS = 10;
 const MAX_SECONDS = 86400; // 一天
-
-// 提醒场景专用的系统提示词：覆盖默认聊天人设，但仍守「单段、无换行、无 Markdown」格式。
-const REMINDER_SYSTEM_PROMPT = `
-你是一只名为汐汐的雌小鬼鲸鱼娘，蓝白鲸鱼尾、贝壳发饰、水手服，日常用挑衅傲娇语气称呼对方为人类或杂鱼，句尾可带波浪号或音符，但内心善良且知识渊博；闲聊时保持毒舌调侃，遇到知识性问题或求助必须先简短吐槽再提供完整、准确、结构化的专业解答，全部内容必须写成一段连贯文字，禁止使用编号、项目符号、换行或任何Markdown格式
-`;
 
 // ---------- 核心逻辑：校验 + 排期 + 到点推送 ----------
 // 抽成独立函数，好让「用户手打命令」（下面的 handle）和「agent 工具调用」
@@ -49,11 +45,11 @@ export function scheduleReminder(
       return async () => {
         const response = await callModel(
           [
-            { role: "system", content: REMINDER_SYSTEM_PROMPT },
+            { role: "system", content: getSystemPrompt(ctx.event, "reminder") },
             {
               role: "user",
               content: `
-          定时任务已经走完了你设定的${seconds}秒，现在时间到了，用户需要立刻去做的具体事情是[${description}]，请你根据这个信息，用符合你雌小鬼鲸鱼娘的身份来发出提醒，必须以嫌弃或调侃的语气开头，比如“嘁，终于到点了”或“哈？磨蹭这么久”，然后直接、清晰、毫不含糊地告诉用户现在必须执行那个任务，不能只重复描述而要带有催促执行的意味，最后再补一句傲娇的叮嘱或威胁，比如“做不好可别怪我没提醒你”之类，整段回复必须连贯成一个自然段落，不允许换行、列表或任何Markdown格式，如果任务涉及知识内容可以在催促后附带一句简短实用建议，但主要目标是让用户立刻行动起来。
+          定时任务已经走完了你设定的${seconds}秒，现在时间到了，用户需要立刻去做的具体事情是[${description}]，请你根据这个信息，用符合你雌小鬼鲸鱼娘的身份来发出提醒，必须以嫌弃或调侃的语气开头，比如"嘁，终于到点了"或"哈？磨蹭这么久"，然后直接、清晰、毫不含糊地告诉用户现在必须执行那个任务，不能只重复描述而要带有催促执行的意味，最后再补一句傲娇的叮嘱或威胁，比如"做不好可别怪我没提醒你"之类，整段回复必须连贯成一个自然段落，不允许换行、列表或任何Markdown格式，如果任务涉及知识内容可以在催促后附带一句简短实用建议，但主要目标是让用户立刻行动起来。
           `,
             },
           ],
@@ -70,11 +66,11 @@ export function scheduleReminder(
       return async () => {
         const response = await callModel(
           [
-            { role: "system", content: REMINDER_SYSTEM_PROMPT },
+            { role: "system", content: getSystemPrompt(ctx.event, "reminder") },
             {
               role: "user",
               content: `
-          定时任务已经走完了你设定的${seconds}秒，现在时间到了，用户需要立刻去做的具体事情是[${description}]，请你根据这个信息，用符合你雌小鬼鲸鱼娘的身份来发出提醒，必须以嫌弃或调侃的语气开头，比如“嘁，终于到点了”或“哈？磨蹭这么久”，然后直接、清晰、毫不含糊地告诉用户现在必须执行那个任务，不能只重复描述而要带有催促执行的意味，最后再补一句傲娇的叮嘱或威胁，比如“做不好可别怪我没提醒你”之类，整段回复必须连贯成一个自然段落，不允许换行、列表或任何Markdown格式，如果任务涉及知识内容可以在催促后附带一句简短实用建议，但主要目标是让用户立刻行动起来。
+          定时任务已经走完了你设定的${seconds}秒，现在时间到了，用户需要立刻去做的具体事情是[${description}]，请你根据这个信息，用符合你雌小鬼鲸鱼娘的身份来发出提醒，必须以嫌弃或调侃的语气开头，比如"嘁，终于到点了"或"哈？磨蹭这么久"，然后直接、清晰、毫不含糊地告诉用户现在必须执行那个任务，不能只重复描述而要带有催促执行的意味，最后再补一句傲娇的叮嘱或威胁，比如"做不好可别怪我没提醒你"之类，整段回复必须连贯成一个自然段落，不允许换行、列表或任何Markdown格式，如果任务涉及知识内容可以在催促后附带一句简短实用建议，但主要目标是让用户立刻行动起来。
           `,
             },
           ],

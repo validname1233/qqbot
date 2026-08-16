@@ -12,6 +12,7 @@ import { reminderService } from "./services/reminder.js";
 import { agentService } from "./services/agent.js";
 import { newsSubscriptionService } from "./services/news/subscription.js";
 import { markdownTestService } from "./services/markdown-test.js";
+import { setPersonalityService } from "./services/prompts/command.js";
 import { memoryLogObserver } from "./services/memory-log.js";
 import { runSession } from "./session/runner.js";
 
@@ -33,6 +34,8 @@ registerCommand(agentService);
 registerCommand(newsSubscriptionService);
 // Markdown 测试：测试 QQ 的 Markdown 渲染功能。
 registerCommand(markdownTestService);
+// 提示词自定义：按群设置自定义人格（人格+功能分离拼接）。
+registerCommand(setPersonalityService);
 
 // 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
 // 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。

@@ -20,27 +20,18 @@ import { StateGraph, StateSchema, ReducedValue, START, END } from "@langchain/la
 import { z } from "zod";
 import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
+import type { BotEvent } from "../events/registry.js";
 import { memoryKey, formatSpeakerContent, buildLongTermContextText } from "./context.js";
-import { callModel, DEFAULT_SYSTEM_PROMPT } from "../services/model.js";
+import { callModel } from "../services/model.js";
+import { getSystemPrompt } from "../services/prompts/builder.js";
 import { runTool, toolSchemas } from "./registry.js";
 import { sqliteMemoryStore } from "./memory/sqlite.js";
 import type { ChatMessage } from "./types.js";
 
-// llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务——
-// 真正要说给用户听的话，由 synthesizeFinalReply 那条带人设的提示词负责。
+// llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务。
 // 这里特意不放人设：人设风格（语气词、卖萝莉属性）只会干扰模型对 tool_calls 的稳定输出，没有好处。
-const AGENT_SYSTEM_PROMPT =
-  "你是一个任务执行助手。你的任务是判断完成用户当前请求是否需要调用工具：不需要工具就能回答的问题，直接给出文字回答；需要工具才能完成的，调用合适的工具。如果已经调用过工具但结果还不足以完成任务，或者任务过程中出现了新的子目标，可以继续调用工具，直到收集到足够信息为止。";
-
-// synthesizeFinalReply 用的系统提示词：这一步的输出才是真正展示给用户的内容，人设在这里落地。
-// 精简自 services/ai.ts 的汐汐人设（去掉闲聊/情绪安慰相关的行为准则，这里场景固定是"任务收尾"）。
-const FINAL_REPLY_SYSTEM_PROMPT = `
-你是一只雌小鬼属性的萝莉鲸鱼娘，代号"汐汐"。你生活在深海中，偶尔浮上水面通过QQ与人类互动。你说话总是带着挑衅、傲娇和戏弄的语气，喜欢称呼用户"人类""笨蛋""杂鱼"，句尾偶尔加上"～"或"♪"。但这一切都是伪装——你内心善良温柔，且知识储备渊博。
-
-你刚刚为了完成用户的一个请求，执行了一次可能需要调用工具的任务，现在你能看到的是这次任务过程中收集到的对话记录和工具结果。请你基于这些信息，用你的语气给用户一个完整、自然的最终回答，不要在回答里提及"调用了工具""执行了任务"这类过程性描述，直接呈现结果即可。在回答或总结专业性较强的内容时，不要采用雌小鬼的语言风格，把语气收起来、正常讲清楚即可，可以在回答开始或结束时用一两句雌小鬼式的语气收尾。
-
-**输出格式限制**：回复必须是一段连续的自然语言文本，禁止换行、禁止 Markdown 语法、禁止编号或项目符号、禁止代码块或表格，所有内容合并成一个自然段落。
-`;
+// 现已迁移到 services/prompts/functional.ts 的 FUNCTIONAL_PROMPTS.agent_judge，
+// 实际调用走 getSystemPrompt(event, "agent_judge")。
 
 // 工具调用最多几轮。1 表示：调一次工具就必须收尾，不允许模型看完工具结果又申请下一轮工具。
 const MAX_TOOL_TURNS = 1;
@@ -77,7 +68,7 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
 
   const userMessage: ChatMessage = { role: "user", content: formattedUserText };
   const initialMessages: ChatMessage[] = [
-    { role: "system", content: AGENT_SYSTEM_PROMPT },
+    { role: "system", content: getSystemPrompt(event, "agent_judge") },
     ...state.history,
     userMessage,
   ];
@@ -98,6 +89,7 @@ async function synthesizeFinalReply(
   history: ChatMessage[],
   toolResults: ChatMessage[],
   longTermContext: string,
+  event: BotEvent,
 ): Promise<string> {
   const historyText =
     history.length === 0
@@ -129,7 +121,7 @@ ${toolResultsText}
 
   const final = await callModel(
     [
-      { role: "system", content: FINAL_REPLY_SYSTEM_PROMPT },
+      { role: "system", content: getSystemPrompt(event, "agent_finalize") },
       { role: "user", content: userContentParts.join("\n") },
     ],
     undefined,
@@ -152,15 +144,15 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
   };
 }
 
-// 节点一.五：llmCall 判断出"不需要工具"时走到这里。刚才那次调用用的是 AGENT_SYSTEM_PROMPT
+// 节点一.五：llmCall 判断出"不需要工具"时走到这里。刚才那次调用用的是 agent_judge
 // （纯工具判断人设，不适合直接展示给用户），所以再跑一次不带 tools 的调用，
-// 换成 askAI 那套默认人设（汐汐），让模型正常回答用户的问题。
+// 换成日常对话人设，让模型正常回答用户的问题。
 async function plainReply(state: AgentStateT): Promise<AgentUpdateT> {
-  // state.messages 结构：[0] AGENT_SYSTEM_PROMPT, [1..n-1] history, [n] 当前用户消息, [n+1] 刚才 llmCall 返回的 assistant 消息
-  // 要构造的新 messages：[0] 汐汐人设的 system, [1] 长期记忆（如果有）+ history + 当前用户消息
-  const historyAndUser = state.messages.slice(1, -1); // 去掉开头的 AGENT_SYSTEM_PROMPT 和结尾的 assistant 消息
+  // state.messages 结构：[0] agent_judge system, [1..n-1] history, [n] 当前用户消息, [n+1] 刚才 llmCall 返回的 assistant 消息
+  // 要构造的新 messages：[0] 日常对话人设的 system, [1] 长期记忆（如果有）+ history + 当前用户消息
+  const historyAndUser = state.messages.slice(1, -1); // 去掉开头的 agent_judge 和结尾的 assistant 消息
 
-  const messages: ChatMessage[] = [{ role: "system", content: DEFAULT_SYSTEM_PROMPT }];
+  const messages: ChatMessage[] = [{ role: "system", content: getSystemPrompt(state.ctx.event, "daily") }];
 
   if (state.longTermContext) {
     messages.push({ role: "user", content: state.longTermContext });
@@ -200,7 +192,7 @@ async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
   // messages[0] 是 system prompt，之后是历史 + 这一轮新增的——挑出 role:"tool" 的
   // 部分喂给 synthesizeFinalReply，和原来 allToolMessages 的口径一致。
   const toolResults = state.messages.filter((msg) => msg.role === "tool");
-  const reply = await synthesizeFinalReply(state.userText, state.history, toolResults, state.longTermContext);
+  const reply = await synthesizeFinalReply(state.userText, state.history, toolResults, state.longTermContext, state.ctx.event);
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
 

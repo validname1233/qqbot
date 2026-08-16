@@ -1,0 +1,63 @@
+// services/prompts/store.ts —— 提示词存储层：管理数据库中的自定义人格数据。
+// 启动时加载全部到内存缓存，运行时修改后同步刷新缓存，避免每次调用都查库。
+
+import Database from "better-sqlite3";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { setPersonalityCache } from "./builder.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dbPath = path.resolve(__dirname, "../../../data/prompts.sqlite");
+
+const db = new Database(dbPath);
+
+// 建表 + 迁移：启动时自动执行
+db.exec(`
+  CREATE TABLE IF NOT EXISTS group_personalities (
+    key TEXT PRIMARY KEY,
+    personality TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )
+`);
+
+interface PersonalityRow {
+  key: string;
+  personality: string;
+  updated_at: number;
+}
+
+const getStmt = db.prepare<[string], PersonalityRow>(
+  "SELECT key, personality, updated_at FROM group_personalities WHERE key = ?",
+);
+
+const upsertStmt = db.prepare<[string, string, number]>(`
+  INSERT INTO group_personalities (key, personality, updated_at)
+  VALUES (?, ?, ?)
+  ON CONFLICT(key) DO UPDATE SET personality = excluded.personality, updated_at = excluded.updated_at
+`);
+
+const listAllStmt = db.prepare<[], PersonalityRow>(
+  "SELECT key, personality, updated_at FROM group_personalities",
+);
+
+// 读取一条记录（运行时基本用不上，因为都走缓存；这里主要用于调试或管理端查询）
+export function getPersonality(key: string): string | null {
+  const row = getStmt.get(key);
+  return row ? row.personality : null;
+}
+
+// 写入/更新一条记录，并同步刷新缓存
+export function setPersonality(key: string, personality: string): void {
+  const now = Date.now();
+  upsertStmt.run(key, personality, now);
+  setPersonalityCache(key, personality);
+}
+
+// 启动时加载全部自定义人格到缓存
+export function initializePersonalities(): void {
+  const rows = listAllStmt.all();
+  for (const row of rows) {
+    setPersonalityCache(row.key, row.personality);
+  }
+  console.log(`[提示词] 已加载 ${rows.length} 条自定义人格到缓存`);
+}

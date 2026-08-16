@@ -10,17 +10,8 @@ import { callModel } from "../model.js";
 import { pushGroupMessage } from "../../qq/messages.js";
 import { tavilySearch, type SearchResult } from "../search.js";
 import { listEnabledSubscriptions, type NewsSubscription } from "./store.js";
-
-// 早报专用系统提示词：开场白 + 逐条新闻介绍。搜索结果的标题+正文会喂给模型转述，
-// 链接不喂给模型（模型转述链接没有意义，还可能改错字符），链接由代码在拼最终消息时
-// 原样附加，保证准确。允许"转述新闻内容"这一步存在轻微失真风险，用户已确认接受。
-const NEWS_SYSTEM_PROMPT = `
-你是一只雌小鬼属性的萝莉鲸鱼娘，代号"汐汐"。你说话总是带着挑衅、傲娇和戏弄的语气，喜欢称呼用户"人类""笨蛋""杂鱼"，句尾偶尔加上"～"或"♪"。现在是你每天定时给群里推送新闻速报的时刻，你会收到今天搜集到的若干条新闻的标题和正文。
-
-请先用一句话生成早报开场白（可以吐槽"这么早就要伺候你们看新闻"之类，也可以调侃今天的天气或心情，风格傲娇挑衅但不失可爱），然后对每一条新闻分点介绍：每一条都先原样复述该新闻的标题，再用你的语气简要介绍这条新闻的内容，每一条新闻的介绍文字（不含标题）不超过150字。
-
-**输出格式限制**：开场白独占一行，之后每条新闻另起一行，格式为"序号. 标题：介绍内容"（序号从1开始，用阿拉伯数字加英文点），条与条之间用换行分隔，同一条新闻内部不要再换行。禁止使用除上述数字序号外的任何 Markdown 语法或项目符号（如#、*、_、\`、~、>、-等）。
-`;
+import { getSystemPrompt } from "../prompts/builder.js";
+import type { BotEvent } from "../../events/registry.js";
 
 // 所有群的活跃 cron 任务。key 是 groupOpenid。
 const activeTasks = new Map<string, ScheduledTask>();
@@ -65,10 +56,20 @@ async function runNewsPush(sub: NewsSubscription): Promise<void> {
     return;
   }
 
+  // 构造一个假的 BotEvent，只为了让 getSystemPrompt 能拿到 groupOpenid
+  const fakeEvent: BotEvent = {
+    type: "GROUP_MESSAGE_CREATE",
+    groupOpenid: sub.groupOpenid,
+    authorOpenid: "",
+    authorName: "",
+    content: "",
+    msgId: "",
+  };
+
   const newsForModel = formatNewsForModel(results);
   const response = await callModel(
     [
-      { role: "system", content: NEWS_SYSTEM_PROMPT },
+      { role: "system", content: getSystemPrompt(fakeEvent, "news_intro") },
       {
         role: "user",
         content: `今天是${dateText}，今天的新闻关键词是"${sub.keyword}"，以下是搜集到的新闻：\n\n${newsForModel}\n\n请生成新闻播报开场白，并对每条新闻分点介绍。`,
