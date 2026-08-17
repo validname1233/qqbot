@@ -29,9 +29,10 @@ import { sqliteMemoryStore } from "./memory/sqlite.js";
 import type { ChatMessage } from "./types.js";
 
 // llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务。
-// 这里特意不放人设：人设风格（语气词、卖萝莉属性）只会干扰模型对 tool_calls 的稳定输出，没有好处。
-// 现已迁移到 services/prompts/functional.ts 的 FUNCTIONAL_PROMPTS.agent_judge，
-// 实际调用走 getSystemPrompt(event, "agent_judge")。
+// 这里特意不放人设：人设风格（语气词、卖萝莉属性）只会干扰模型对 tool_calls 的稳定输出，
+// 而且这次调用的文字输出不会展示给用户（plainReply/finalize 会换人设重新生成）。
+// 规则文本在 FUNCTIONAL_PROMPTS.agent_judge；agent_judge 在 builder.ts 登记为
+// "纯功能场景"，getSystemPrompt 对它只返回功能规则、不拼人格。
 
 // 工具调用最多几轮。1 表示：调一次工具就必须收尾，不允许模型看完工具结果又申请下一轮工具。
 const MAX_TOOL_TURNS = 1;

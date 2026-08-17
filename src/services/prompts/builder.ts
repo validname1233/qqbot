@@ -8,11 +8,26 @@ import { DEFAULT_PERSONALITY, FUNCTIONAL_PROMPTS, type PromptScene } from "./fun
 // 模块内缓存：启动时从数据库加载所有自定义人格，运行时直接从这里读（不再每次查库）
 const personalityCache = new Map<string, string>();
 
-// 获取完整系统提示词：人格（自定义或默认）+ 功能规则（按场景）
+// 纯功能场景：这些场景只返回功能规则，不拼接人格。
+// agent_judge（工具判断）是典型——这次调用只关心 tool_calls 的准确输出，
+// 它的文字内容不会被用户看到（plainReply/finalize 会换人设重新生成），
+// 人设文本对判断是纯噪声，还会让"按群自定义人格"间接改变工具判断行为。
+// 以后若新增类似"只做结构化判断"的场景，往这个集合里加一项即可。
+const PURE_FUNCTIONAL_SCENES: ReadonlySet<PromptScene> = new Set<PromptScene>([
+  "agent_judge",
+]);
+
+// 获取完整系统提示词：人格（自定义或默认）+ 功能规则（按场景）。
+// 纯功能场景例外：只返回功能规则，不拼人格。
 export function getSystemPrompt(event: BotEvent, scene: PromptScene = "daily"): string {
+  const functional = FUNCTIONAL_PROMPTS[scene];
+
+  if (PURE_FUNCTIONAL_SCENES.has(scene)) {
+    return functional;
+  }
+
   const key = memoryKey(event);
   const personality = personalityCache.get(key) ?? DEFAULT_PERSONALITY;
-  const functional = FUNCTIONAL_PROMPTS[scene];
 
   // 功能规则为空（如 daily 场景）时只返回人格；否则拼接 "人格\n\n功能"
   return functional ? `${personality}\n\n${functional}` : personality;
