@@ -29,7 +29,8 @@ export function getSystemPrompt(event: BotEvent, scene: PromptScene = "daily"): 
   const key = memoryKey(event);
   const personality = personalityCache.get(key) ?? DEFAULT_PERSONALITY;
 
-  // 功能规则为空（如 daily 场景）时只返回人格；否则拼接 "人格\n\n功能"
+  // 功能规则为空时只返回人格；否则拼接 "人格\n\n功能"
+  //（daily 现在也带输出格式限制，暂时没有功能规则为空的场景，分支留作通用逻辑）
   return functional ? `${personality}\n\n${functional}` : personality;
 }
 
