@@ -27,6 +27,13 @@ function optionalEnv(key: string, fallback: string): string {
   return value === undefined || value === "" ? fallback : value;
 }
 
+// 数值型可选配置：没填用默认值；填了但不是合法数字也用默认值（不抛错）——
+// 调参类配置宁可静默回退到已知好用的值，也不让 bot 因手滑写错而启动失败。
+function optionalEnvNumber(key: string, fallback: number): number {
+  const value = Number(env[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
 // 把校验好的凭据导出成一个只读对象。
 // as const 让 TS 把它当成字面量类型且不可修改，避免别处不小心改动。
 export const config = {
@@ -43,4 +50,14 @@ export const config = {
   // 智谱 BigModel 的文本嵌入 API key（长期记忆 RAG 召回用，必填）和模型名（选填，有默认）。
   embeddingApiKey: requireEnv("EMBEDDING_API_KEY"),
   embeddingModel: optionalEnv("EMBEDDING_MODEL", "embedding-3"),
+  // 长期记忆混合检索的调参项（选填，均有默认值）：
+  //   rrfK            —— RRF 融合常数，60 是论文标准值。调小则头部排名权重更尖锐，
+  //                      调大则各排名位次的贡献更平缓。
+  //   minSimilarity   —— 向量通道的余弦相似度门槛，低于它的候选不进融合。
+  //   bm25K1 / bm25B  —— BM25 的词频饱和度与文档长度归一化参数，业界默认 1.5 / 0.75。
+  // 都属于"跑真实对话调参"的旋钮，所以走环境变量而不是写死常量。
+  rrfK: optionalEnvNumber("RRF_K", 60),
+  minSimilarity: optionalEnvNumber("MIN_SIMILARITY", 0.35),
+  bm25K1: optionalEnvNumber("BM25_K1", 1.5),
+  bm25B: optionalEnvNumber("BM25_B", 0.75),
 } as const;
