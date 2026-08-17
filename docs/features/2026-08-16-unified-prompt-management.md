@@ -65,7 +65,7 @@ getSystemPrompt(event, "reminder")
 
 4. **src/services/prompts/command.ts**
    - 实现 `/set_personality <人格描述>` 命令
-   - 只允许群聊使用（单聊场景用默认人格即可）
+   - 群聊/单聊均可用（2026-08-17 起支持单聊），隔离粒度由 `memoryKey(event)` 决定：群聊按群、单聊按用户
    - 调用 `setPersonality(memoryKey(event), personality)` 写入数据库并刷新缓存
 
 ### 修改的文件
@@ -114,12 +114,12 @@ CREATE TABLE IF NOT EXISTS group_personalities (
 
 ### 用户侧
 
-在群聊中发送命令：
+在群聊或单聊中发送命令：
 ```
 /set_personality 你是一个严肃的学术助手，回答问题时引用权威文献，语气正式专业
 ```
 
-机器人确认后，该群的所有对话（日常聊天、Agent 收尾、定时提醒、新闻播报）都会使用新人格。
+机器人确认后，对应会话（该群，或该用户的单聊）的所有对话（日常聊天、Agent 收尾、定时提醒、新闻播报）都会使用新人格。
 
 ### 开发者侧
 
@@ -158,7 +158,7 @@ const systemPrompt = getSystemPrompt(event, "agent_finalize");
 - 单聊：`c2c:<userOpenid>`
 - 群聊：`group:<groupOpenid>`
 
-不同群的自定义人格互不影响。
+不同群、不同单聊用户的自定义人格互不影响。
 
 ### 功能规则不可自定义的原因
 
@@ -175,9 +175,9 @@ const systemPrompt = getSystemPrompt(event, "agent_finalize");
    - 当前设置自定义人格后无法通过命令恢复默认
    - 可考虑增加 `/reset_personality` 命令，调用 `clearPersonalityCache(key)` 删除缓存和数据库记录
 
-2. **单聊暂不支持自定义人格**
-   - 设计考虑：单聊场景用户少，用默认人格即可
-   - 如需支持，移除 `command.ts` 中的群聊限制即可
+2. **单聊自定义人格已支持（2026-08-17 更新）**
+   - 移除了 `command.ts` 中的群聊限制，单聊用户可设置自己独立的人格
+   - 隔离粒度由 `memoryKey(event)` 天然决定：单聊 `c2c:<userOpenid>` 只影响该用户自己的对话，群聊 `group:<groupOpenid>` 整群共享，两套 key 互不干扰
 
 ### 可能的优化方向
 
