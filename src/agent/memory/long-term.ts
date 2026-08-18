@@ -293,13 +293,18 @@ export const longTermMemoryStore: LongTermMemoryStore = {
       .sort((a, b) => b.rrf - a.rrf)
       .slice(0, topK);
 
-    // 召回日志：两通道各自的排名（id 降序排列）+ 融合分数，方便跑真实对话观察调参。
+    // 召回日志：两通道各自的排名（id 降序排列）+ 融合分数与摘要，方便跑真实对话观察调参。
+    // 摘要取 memory_index（写入时 LLM 生成的 10-20 字检索摘要），超长截断保住单行可读。
     const describe = (ids: number[], channel: string) =>
       ids.length === 0 ? `${channel}:无` : `${channel}:${ids.map((id) => `#${id}`).join(">")}`;
+    const indexById = new Map(rows.map((row) => [row.id, row.memory_index] as const));
     console.log(
       `[长期记忆] ${describe(vecRanking, "向量")} ${describe(kwRanking, "关键词")} → ${rankedIds
-        .map(({ id, rrf }) => `#${id}(${rrf.toFixed(4)})`)
-        .join(" ")}`,
+        .map(
+          ({ id, rrf }) =>
+            `#${id}(${rrf.toFixed(4)} ${(indexById.get(id) ?? "").slice(0, 20)})`,
+        )
+        .join(" | ")}`,
     );
 
     const byId = new Map(rows.map((row) => [row.id, rowToMemory(row)] as const));

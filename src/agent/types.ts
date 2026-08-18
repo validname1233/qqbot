@@ -1,4 +1,4 @@
-// agent/types.ts —— agent 内部用到的消息/工具类型，镜像 SiliconFlow（OpenAI 兼容）的
+// agent/types.ts —— agent 内部用到的消息/工具类型，镜像 DeepSeek（OpenAI 兼容）的
 // function-calling 数据形状。loop.ts 用 ChatMessage 拼 messages 数组，memory 存的也是这个类型。
 
 // 模型发起的一次工具调用：带 id（第二轮要用它把结果对应回去）和工具名+参数。
@@ -22,7 +22,7 @@ export interface ChatMessage {
   tool_call_id?: string;
 }
 
-// 发给模型的 tools 字段的形状（SiliconFlow/OpenAI 的 function-calling 契约）。
+// 发给模型的 tools 字段的形状（DeepSeek/OpenAI 的 function-calling 契约）。
 // client.ts 发请求、registry.ts 组装这个数组时共用同一个类型，避免各写一遍结构。
 export interface ToolSchema {
   type: "function";

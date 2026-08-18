@@ -1,11 +1,12 @@
 // services/model.ts —— 调用大模型的统一入口。原来 agent/client.ts（要 tools/tool_calls）
-// 和 services/ai.ts（单轮问答、走默认人设）功能重叠——都是拼 messages 发到同一个
-// SiliconFlow 接口——合并成一份，其余代码统一改用这里的 callModel。
+// 和 services/ai.ts（单轮问答、走默认人设）功能重叠——都是拼 messages 发到同一家
+// 接口——合并成一份，其余代码统一改用这里的 callModel。
 
 import { config } from "../config.js";
 import type { ChatMessage, ToolSchema } from "../agent/types.js";
 
-const API_URL = "https://api.siliconflow.cn/v1/chat/completions";
+// DeepSeek 官方 OpenAI 兼容接口。注意路径不带 /v1（那是给 OpenAI SDK 用的兼容别名）。
+const API_URL = "https://api.deepseek.com/chat/completions";
 
 interface ChatCompletionResponse {
   choices?: Array<{ message?: ChatMessage }>;
@@ -58,7 +59,9 @@ export async function callModel(
       model,
       messages,
       ...(tools !== undefined && tools.length > 0 ? { tools } : {}),
-      enable_thinking: enableThinking,
+      // DeepSeek 的思考模式开关：必须显式传 disabled——它的默认值是 enabled，
+      // 不传的话工具判断/日常回复这类调用会静默带上思维链，多耗 token 且变慢。
+      thinking: { type: enableThinking ? "enabled" : "disabled" },
     }),
   });
 
