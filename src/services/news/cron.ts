@@ -63,6 +63,7 @@ async function runNewsPush(sub: NewsSubscription): Promise<void> {
     authorOpenid: "",
     authorName: "",
     content: "",
+    attachments: [], // 假事件不带附件，真实事件解析时才可能非空
     msgId: "",
   };
 

@@ -7,11 +7,13 @@
 
 import type { EventDefinition } from "../definition.js";
 import type { RawEvent } from "../raw.js";
+import { parseAttachments, type MessageAttachment } from "../attachments.js";
 
 // ---------- 对外提供的「干净事件」 ----------
 export interface GroupAtMessageEvent {
   type: "GROUP_AT_MESSAGE_CREATE";
   content: string; // 消息内容
+  attachments: MessageAttachment[]; // 消息附件（图片/语音/视频等），无附件时为空数组
   groupOpenid: string; // 哪个群，回复发到这个群
   authorOpenid: string; // 发消息的群成员 member_openid
   authorName: string; // 发消息人的昵称（author.username）
@@ -53,6 +55,7 @@ export const groupAtMessageDef: EventDefinition<GroupAtMessageEvent> = {
     return {
       type: "GROUP_AT_MESSAGE_CREATE",
       content: raw.d.content,
+      attachments: parseAttachments(raw.d),
       groupOpenid: raw.d.group_openid,
       authorOpenid: raw.d.author.member_openid,
       authorName: raw.d.author.username,

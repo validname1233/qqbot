@@ -16,5 +16,5 @@
     // 只做类型检查，不产出 js（我们用 tsx 直接跑源码）。
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }

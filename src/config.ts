@@ -60,4 +60,12 @@ export const config = {
   minSimilarity: optionalEnvNumber("MIN_SIMILARITY", 0.35),
   bm25K1: optionalEnvNumber("BM25_K1", 1.5),
   bm25B: optionalEnvNumber("BM25_B", 0.75),
+  // 长期记忆数据库文件名（选填，落在 data/ 目录下）。默认 memory.sqlite（与短期记忆
+  // 共用同一个库文件）；test/recall 的评测脚本用 MEMORY_DB_PATH 指向独立的
+  // recall-test.sqlite，实现测试库与生产库的文件级隔离。
+  memoryDbFile: optionalEnv("MEMORY_DB_PATH", "memory.sqlite"),
+  // 千问（Qwen）视觉模型图像理解（vision.ts）。全部可选：VISION_API_KEY 留空 =
+  // 多模态功能整体关闭。走 DashScope 的 OpenAI 兼容接口（阿里云国内端点，直连可用）。
+  visionApiKey: optionalEnv("VISION_API_KEY", ""),
+  visionModel: optionalEnv("VISION_MODEL", "qwen3.7-flash"),
 } as const;

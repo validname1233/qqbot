@@ -4,12 +4,14 @@
 
 import type { EventDefinition } from "../definition.js";
 import type { RawEvent } from "../raw.js";
+import { parseAttachments, type MessageAttachment } from "../attachments.js";
 
 // ---------- 对外提供的「干净事件」 ----------
 // type 字段是判别式标签，dispatcher 和可辨识联合靠它区分事件种类。
 export interface C2CMessageEvent {
   type: "C2C_MESSAGE_CREATE";
   content: string; // 用户说的话
+  attachments: MessageAttachment[]; // 消息附件（图片/语音/视频等），无附件时为空数组
   authorOpenid: string; // 发消息的人，回复就发给这个 openid
   authorName: string; // 发消息人的昵称（author.username）
   msgId: string; // 这条消息的 id，被动回复要带上它
@@ -43,6 +45,7 @@ export const c2cMessageDef: EventDefinition<C2CMessageEvent> = {
     return {
       type: "C2C_MESSAGE_CREATE",
       content: raw.d.content,
+      attachments: parseAttachments(raw.d),
       authorOpenid: raw.d.author.user_openid,
       authorName: raw.d.author.username,
       msgId: raw.d.id,

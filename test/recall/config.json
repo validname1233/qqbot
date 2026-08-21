@@ -1,0 +1,13 @@
+{
+  "dbKey": "test:recall",
+  "corpusFile": "data/corpus.json",
+  "queriesFile": "data/queries.json",
+  "modes": ["rag", "keyword", "hybrid"],
+  "topK": 5,
+  "minSimilarity": 0.35,
+  "rrfK": 60,
+  "vecWeight": 1.0,
+  "kwWeight": 1.0,
+  "bm25K1": 1.5,
+  "bm25B": 0.75
+}
