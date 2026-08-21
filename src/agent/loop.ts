@@ -68,18 +68,29 @@ type AgentUpdateT = typeof AgentState.Update;
 // memory/images.ts）。后面的节点只管读 state，不用各自判断"是不是群聊"。
 async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   const event = state.ctx.event;
+  // 临时计时日志：排查 prepareContext 各步耗时用，看完可删。
+  // 基准点取函数入口，每步打"累计耗时"而不是分段差值——分段差值要记上一段时间戳，
+  // 累计值一行代码就能算，且各步加起来是否等于总耗时一眼可验。
+  const t0 = Date.now();
+  const step = (name: string, since: number): void => {
+    console.log(`[prepareContext] ${name} 完成（累计 +${Date.now() - since}ms）`);
+  };
 
   // 当前消息：占位符拼在文字前（与 memory-log 的口径一致），再套群聊昵称前缀。
   const rawUserText = buildTextWithPlaceholders(state.userText, state.imageIds);
   const formattedUserText = formatSpeakerContent(rawUserText, event.authorName, event);
+  step("占位符拼接与说话人格式化", t0);
 
   // 展开懒加载占位符：history 的 user 消息 + 当前 userMessage（/Agent 带图当轮就要看）。
   // 只展开 user 消息——assistant 回复万一复读了 "[图片:17]" 字样，不能被误替换。
   // 展开后的 history 覆盖写回 state：finalize 节点读 state.history，必须拿到展开版。
   const expandedHistory = await expandHistoryImages(state.history);
+  step("history 图片占位符展开", t0);
   const expandedUserText = await expandImagePlaceholders(formattedUserText);
+  step("当前消息图片占位符展开", t0);
 
   const longTermContext = await buildLongTermContextText(event, state.userText);
+  step("长期记忆召回", t0);
 
   const userMessage: ChatMessage = { role: "user", content: expandedUserText };
   const initialMessages: ChatMessage[] = [
