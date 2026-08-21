@@ -4,6 +4,7 @@
 
 import { getAccessToken } from "./qq/auth.js";
 import { apiRequest } from "./qq/api.js";
+import { logger } from "./services/logger.js";
 
 // /gateway 接口返回的形状：一个 WebSocket 网关地址。
 interface GatewayResponse {
@@ -17,12 +18,12 @@ function maskToken(token: string): string {
 }
 
 // 顶层 await：ES 模块里可以直接在文件顶层用 await，不必包一层 main()。
-console.log("正在换取 Access Token...");
+logger.info("boot", "正在换取 Access Token...");
 const token = await getAccessToken();
-console.log(`拿到 token：${maskToken(token)}`);
+logger.info("boot", `拿到 token：${maskToken(token)}`);
 
-console.log("正在获取 WebSocket 网关地址...");
+logger.info("boot", "正在获取 WebSocket 网关地址...");
 const gateway = await apiRequest<GatewayResponse>("/gateway");
-console.log(`网关地址：${gateway.url}`);
+logger.info("boot", `网关地址：${gateway.url}`);
 
-console.log("认证链路验证成功 ✅");
+logger.info("boot", "认证链路验证成功 ✅");

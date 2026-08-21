@@ -24,6 +24,7 @@ import type { BotEvent } from "../events/registry.js";
 import { memoryKey, formatSpeakerContent, buildLongTermContextText } from "./context.js";
 import { expandImagePlaceholders } from "./memory/images.js";
 import { callModel } from "../services/model.js";
+import { logger } from "../services/logger.js";
 import { getSystemPrompt } from "../services/prompts/builder.js";
 import { runTool, toolSchemas } from "./registry.js";
 import { sqliteMemoryStore } from "./memory/sqlite.js";
@@ -73,7 +74,7 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   // 累计值一行代码就能算，且各步加起来是否等于总耗时一眼可验。
   const t0 = Date.now();
   const step = (name: string, since: number): void => {
-    console.log(`[prepareContext] ${name} 完成（累计 +${Date.now() - since}ms）`);
+    logger.debug("agent", `prepareContext ${name} 完成（累计 +${Date.now() - since}ms）`);
   };
 
   // 当前消息：占位符拼在文字前（与 memory-log 的口径一致），再套群聊昵称前缀。

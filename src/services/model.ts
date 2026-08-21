@@ -4,6 +4,7 @@
 
 import { config } from "../config.js";
 import type { ChatMessage, ToolSchema } from "../agent/types.js";
+import { logger } from "./logger.js";
 
 // DeepSeek 官方 OpenAI 兼容接口。注意路径不带 /v1（那是给 OpenAI SDK 用的兼容别名）。
 const API_URL = "https://api.deepseek.com/chat/completions";
@@ -45,8 +46,9 @@ export async function callModel(
   // 找最后一条 role:"user" 的消息（即这一轮真正的用户输入），日志里打出来方便排查
   // "这次调用到底是在回应哪句话"——system/history 太长，只看这一条最有用。
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
-  console.debug(
-    `[agent:debug] [${label}] 请求大模型调用 model=${model} enableThinking=${enableThinking} tools=${tools?.length ?? 0} messages=${messages.length} userMessage=${truncateContent(lastUserMessage?.content ?? null)}`,
+  logger.debug(
+    "model",
+    `[${label}] 请求大模型调用 model=${model} enableThinking=${enableThinking} tools=${tools?.length ?? 0} messages=${messages.length} userMessage=${truncateContent(lastUserMessage?.content ?? null)}`,
   );
 
   const response = await fetch(API_URL, {
@@ -69,14 +71,14 @@ export async function callModel(
 
   if (!response.ok) {
     const detail = await response.text();
-    console.debug(`[agent:debug] [${label}] 大模型调用失败 (+${elapsed}ms) status=${response.status} detail=${detail}`);
+    logger.debug("model", `[${label}] 大模型调用失败 (+${elapsed}ms) status=${response.status} detail=${detail}`);
     throw new Error(`AI 接口返回 ${response.status}: ${detail}`);
   }
 
   const data = (await response.json()) as ChatCompletionResponse;
   const message = data.choices?.[0]?.message;
   if (message === undefined) {
-    console.debug(`[agent:debug] [${label}] 大模型调用失败 (+${elapsed}ms) 返回里没有 message 字段`);
+    logger.debug("model", `[${label}] 大模型调用失败 (+${elapsed}ms) 返回里没有 message 字段`);
     throw new Error("AI 接口返回里没有 message 字段");
   }
 
@@ -85,8 +87,9 @@ export async function callModel(
     message.tool_calls === undefined
       ? "无"
       : message.tool_calls.map((call) => `${call.function.name}(${call.function.arguments})`).join(", ");
-  console.debug(
-    `[agent:debug] [${label}] 大模型调用返回 (+${elapsed}ms) content=${truncateContent(message.content)} tool_calls=${toolCallsSummary}`,
+  logger.debug(
+    "model",
+    `[${label}] 大模型调用返回 (+${elapsed}ms) content=${truncateContent(message.content)} tool_calls=${toolCallsSummary}`,
   );
 
   return message;

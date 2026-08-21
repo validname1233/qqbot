@@ -14,6 +14,7 @@ import { newsSubscriptionService } from "./services/news/subscription.js";
 import { markdownTestService } from "./services/markdown-test.js";
 import { setPersonalityService } from "./services/prompts/command.js";
 import { memoryLogObserver } from "./services/memory-log.js";
+import { logger } from "./services/logger.js";
 import { runSession } from "./session/runner.js";
 
 // ---------- 注册表 ----------
@@ -94,7 +95,7 @@ export async function runCommand(ctx: MessageContext): Promise<string | null> {
   try {
     return await svc.handle(ctx);
   } catch (err) {
-    console.error(`[service:${ctx.command}] 出错:`, err);
+    logger.error("service", `/${ctx.command} 出错: ${err instanceof Error ? err.message : err}`);
     return "这个功能暂时坏了，稍后再试～";
   }
 }
@@ -106,7 +107,7 @@ export async function runObservers(ctx: MessageContext): Promise<string[]> {
   const results = await Promise.all(
     observers.map((o) =>
       o.observe(ctx).catch((err: unknown) => {
-        console.error(`[observer:${o.name}] 出错:`, err);
+        logger.error("service", `观察者「${o.name}」出错: ${err instanceof Error ? err.message : err}`);
         return null;
       }),
     ),

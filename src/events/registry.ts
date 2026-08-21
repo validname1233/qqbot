@@ -10,6 +10,7 @@ import type { RawEvent } from "./raw.js";
 import { c2cMessageDef } from "./C2C_MESSAGE_CREATE/index.js";
 import { groupAtMessageDef } from "./GROUP_AT_MESSAGE_CREATE/index.js";
 import { groupMessageDef } from "./GROUP_MESSAGE_CREATE/index.js";
+import { logger } from "../services/logger.js";
 
 // 所有已知事件定义。加事件 = 往这个数组加一项（并在上面 import）。
 // as const 让 TS 记住数组每一项的精确类型，下面才能反推出各事件的联合。
@@ -25,7 +26,9 @@ export type BotEvent = EventOf<(typeof eventDefs)[number]>;
 // ---------- 解析入口 ----------
 // 按 raw.t 找对应定义；没登记的事件返回 null（上层安静忽略）。
 export function parseEvent(raw: RawEvent): BotEvent | null {
-  console.log(`[events] 收到事件: ${raw.t}`);
+  // 事件心跳：每条消息都会打，严格说够 debug 级，但单进程长驻服务留 info——
+  // "链路活着"的可见性优先于安静（级别语义讨论见 logger.ts 头注释）。
+  logger.info("events", `收到事件: ${raw.t}`);
 
   const def = eventDefs.find((d) => d.t === raw.t);
   if (def === undefined) return null;

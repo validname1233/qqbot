@@ -71,4 +71,7 @@ export const config = {
   // 单次 /Agent 最多识图张数（选填）。取窗口内最近的 N 张，防止一次 /Agent
   // 因历史里堆了十几张图而爆量（既慢又贵）。默认 5。
   visionMaxImages: optionalEnvNumber("VISION_MAX_IMAGES", 5),
+  // 日志级别下限（选填）：debug / info / warn / error，默认 info。
+  // debug 会打印每次 LLM 调用明细；非法值回退 info。见 services/logger.ts。
+  logLevel: optionalEnv("LOG_LEVEL", "info"),
 } as const;

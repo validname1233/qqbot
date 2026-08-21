@@ -11,6 +11,7 @@ import { pushGroupMessage } from "../../qq/messages.js";
 import { tavilySearch, type SearchResult } from "../search.js";
 import { listEnabledSubscriptions, type NewsSubscription } from "./store.js";
 import { getSystemPrompt } from "../prompts/builder.js";
+import { logger } from "../logger.js";
 import type { BotEvent } from "../../events/registry.js";
 
 // 所有群的活跃 cron 任务。key 是 groupOpenid。
@@ -95,7 +96,7 @@ export function registerCron(sub: NewsSubscription): void {
     `${sub.minute} ${sub.hour} * * *`,
     () => {
       void runNewsPush(sub).catch((err: unknown) => {
-        console.error(`[新闻订阅] 群 ${sub.groupOpenid} 推送失败:`, err);
+        logger.error("news", `群 ${sub.groupOpenid} 推送失败: ${err instanceof Error ? err.message : err}`);
       });
     },
     { timezone: "Asia/Shanghai" },
@@ -119,5 +120,5 @@ export function initializeNewsCron(): void {
   for (const sub of subs) {
     registerCron(sub);
   }
-  console.log(`[新闻订阅] 已恢复 ${subs.length} 个群的定时推送`);
+  logger.info("news", `已恢复 ${subs.length} 个群的定时推送`);
 }

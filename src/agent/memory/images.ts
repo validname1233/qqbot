@@ -22,6 +22,7 @@ import type { BotEvent } from "../../events/registry.js";
 import { isImageAttachment } from "../../events/attachments.js";
 import { memoryKey } from "../context.js";
 import { describeImage } from "../../services/vision.js";
+import { logger } from "../../services/logger.js";
 import { config } from "../../config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -75,12 +76,12 @@ async function downloadImage(url: string): Promise<Uint8Array | null> {
     if (!response.ok) return null;
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength > MAX_IMAGE_BYTES) {
-      console.warn(`[images] 图片过大（${buffer.byteLength}字节），跳过入库`);
+      logger.warn("images", `图片过大（${buffer.byteLength}字节），跳过入库`);
       return null;
     }
     return new Uint8Array(buffer);
   } catch (err) {
-    console.warn(`[images] 图片下载失败: ${err instanceof Error ? err.message : err}`);
+    logger.warn("images", `图片下载失败: ${err instanceof Error ? err.message : err}`);
     return null;
   } finally {
     clearTimeout(timer);
@@ -119,7 +120,7 @@ function pruneImagesOutsideWindow(key: string): void {
     }
     deleteStmt.run(row.id);
   }
-  console.log(`[images] 清理窗口外图片 ${stale.length} 张（key=${key}）`);
+  logger.info("images", `清理窗口外图片 ${stale.length} 张（key=${key}）`);
 }
 
 // ---------- 对外：写入侧（收到消息时） ----------
@@ -157,7 +158,7 @@ export async function persistEventImages(event: BotEvent): Promise<number[]> {
     const filePath = join(IMAGE_DIR, `${result.lastInsertRowid}.${fileExtension(img.filename)}`);
     writeFileSync(filePath, bytes);
     db.prepare(`UPDATE message_images SET file_path = ? WHERE id = ?`).run(filePath, result.lastInsertRowid);
-    console.log(`[images] 图片入库 ${filePath}（${bytes.length}字节，key=${key}）`);
+    logger.info("images", `图片入库 ${filePath}（${bytes.length}字节，key=${key}）`);
     insertedIds.push(Number(result.lastInsertRowid));
   }
 
@@ -226,9 +227,7 @@ export async function expandImagePlaceholders(text: string): Promise<string> {
         descriptions.set(id, description);
       } catch (err) {
         // 单张失败单独降级：这张图标注无法识别，其余图片和主链路照常。
-        console.warn(
-          `[images] 识图失败 id=${id}: ${err instanceof Error ? err.message : err}`,
-        );
+        logger.warn("images", `识图失败 id=${id}: ${err instanceof Error ? err.message : err}`);
         descriptions.set(id, "该图片暂时无法识别");
       }
     }),

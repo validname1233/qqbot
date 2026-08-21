@@ -11,6 +11,7 @@ import type { RawEvent } from "./events/raw.js";
 import { dispatch } from "./events/dispatcher.js";
 import { initializeNewsCron } from "./services/news/cron.js";
 import { initializePersonalities } from "./services/prompts/store.js";
+import { logger } from "./services/logger.js";
 
 // 本地监听端口。只绑 127.0.0.1，不对公网暴露——外面只能经 nginx 进来。
 const PORT = 3000;
@@ -89,7 +90,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // 用 AppSecret 对 event_ts + plain_token 签名，原样回 plain_token + signature。
     const signature = signValidation(config.appSecret, event_ts, plain_token);
     sendJson(res, 200, { plain_token, signature });
-    console.log("[webhook] 回调验证请求已响应");
+    logger.info("webhook", "回调验证请求已响应");
     return;
   }
 
@@ -107,7 +108,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       !verifySignature(config.appSecret, timestamp, raw, signature)
     ) {
       sendJson(res, 401, { message: "签名校验失败" });
-      console.warn("[webhook] 事件签名校验失败，已拒绝");
+      logger.warn("webhook", "事件签名校验失败，已拒绝");
       return;
     }
 
@@ -119,7 +120,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // 解析成强类型事件后交给 dispatcher 路由。解析不认识的事件返回 null，dispatch 会忽略。
     const event = parseEvent(payload as RawEvent);
     dispatch(event).catch((err: unknown) => {
-      console.error("[webhook] 事件处理出错:", err);
+      logger.error("webhook", `事件处理出错: ${err instanceof Error ? err.message : err}`);
     });
     return;
   }
@@ -131,7 +132,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 const server = createServer((req, res) => {
   // handleRequest 是 async，出错要兜住，否则会崩掉整个进程。
   handleRequest(req, res).catch((err: unknown) => {
-    console.error("[webhook] 处理请求出错:", err);
+    logger.error("webhook", `处理请求出错: ${err instanceof Error ? err.message : err}`);
     if (!res.headersSent) {
       sendJson(res, 500, { message: "Internal Error" });
     }
@@ -146,5 +147,5 @@ initializeNewsCron();
 initializePersonalities();
 
 server.listen(PORT, HOST, () => {
-  console.log(`[webhook] 监听 http://${HOST}:${PORT}（经 nginx 反代对外提供 HTTPS）`);
+  logger.info("webhook", `监听 http://${HOST}:${PORT}（经 nginx 反代对外提供 HTTPS）`);
 });

@@ -6,6 +6,7 @@
 // 与 model.ts 的 DeepSeek 调用同款手写 fetch：REST + JSON，不引 SDK。
 
 import { config } from "../config.js";
+import { logger } from "./logger.js";
 
 // DashScope OpenAI 兼容模式的 chat completions 端点。和 model.ts 一样写死成常量：
 // 境内直连可用，没有代理/私有化部署的配置需求。
@@ -158,13 +159,15 @@ export async function describeImage(
   const result =
     text.length > maxChars ? `${text.slice(0, maxChars)}…（描述已截断）` : text;
 
-  console.log(
-    `[vision] 图像理解完成 (+${elapsed}ms) 图片${imageBytes.length}字节 → 描述${result.length}字`,
+  logger.info(
+    "vision",
+    `图像理解完成 (+${elapsed}ms) 图片${imageBytes.length}字节 → 描述${result.length}字`,
   );
   // 描述本体单独一条打出来（150 字截断，对齐 model.ts truncateContent 的口径：
   // 够看出这次"看懂了什么"即可，全量描述可能几百字，刷屏）。
-  console.log(
-    `[vision] 描述预览: ${result.length > 150 ? `${result.slice(0, 150)}...` : result}`,
+  logger.info(
+    "vision",
+    `描述预览: ${result.length > 150 ? `${result.slice(0, 150)}...` : result}`,
   );
   return result;
 }

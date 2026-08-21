@@ -11,6 +11,7 @@ import type { CommandService, MessageContext } from "../types.js";
 import { callModel } from "./model.js";
 import { pushC2CMessage, pushGroupMessage } from "../qq/messages.js";
 import { getSystemPrompt } from "./prompts/builder.js";
+import { logger } from "./logger.js";
 
 const MIN_SECONDS = 10;
 const MAX_SECONDS = 86400; // 一天
@@ -94,7 +95,7 @@ export function scheduleReminder(
   // 回调本身必须自带 try/catch：定时器回调里的异常没人接，漏出去会拖垮进程。
   setTimeout(() => {
     void push().catch((err: unknown) => {
-      console.error("[定时任务] 到点推送失败:", err);
+      logger.error("reminder", `到点推送失败: ${err instanceof Error ? err.message : err}`);
     });
   }, seconds * 1000);
 

@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import type { MessageAuthor } from "./types.js";
 import { embedText } from "../../services/embedding.js";
 import { tokenize } from "../../services/tokenizer.js";
+import { logger } from "../../services/logger.js";
 import { config } from "../../config.js";
 
 const MAX_MEMORIES = 100;
@@ -388,8 +389,9 @@ export const longTermMemoryStore: LongTermMemoryStore = {
     // 超长截断保住单行可读。
     const describe = (ids: number[], channel: string) =>
       ids.length === 0 ? `${channel}:无` : `${channel}:${ids.map((id) => `#${id}`).join(">")}`;
-    console.log(
-      `[长期记忆] ${describe(result.vecRanking, "向量")} ${describe(result.kwRanking, "关键词")} → ${result.items
+    logger.info(
+      "memory",
+      `${describe(result.vecRanking, "向量")} ${describe(result.kwRanking, "关键词")} → ${result.items
         .map((i) => `#${i.memory.id}(${i.rrf.toFixed(4)} ${i.memory.memoryIndex.slice(0, 20)})`)
         .join(" | ")}`,
     );

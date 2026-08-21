@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setPersonalityCache } from "./builder.js";
+import { logger } from "../logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.resolve(__dirname, "../../../data/prompts.sqlite");
@@ -59,5 +60,5 @@ export function initializePersonalities(): void {
   for (const row of rows) {
     setPersonalityCache(row.key, row.personality);
   }
-  console.log(`[提示词] 已加载 ${rows.length} 条自定义人格到缓存`);
+  logger.info("prompts", `已加载 ${rows.length} 条自定义人格到缓存`);
 }
