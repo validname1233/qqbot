@@ -4,6 +4,7 @@
 
 import type { CommandService, MessageContext } from "../types.js";
 import { runAgentTurn } from "../agent/loop.js";
+import { persistEventImages } from "../agent/memory/images.js";
 import { registerTool } from "../agent/registry.js";
 import { setReminderTool } from "../agent/tools/set-reminder.js";
 import { searchTool } from "../agent/tools/search.js";
@@ -27,6 +28,9 @@ export const agentService: CommandService = {
     if (question.trim() === "") {
       return "用法：/Agent 你想说的话～";
     }
-    return runAgentTurn(question, ctx);
+    // /Agent 消息自带的图片要先下载入库（占位符拼进当前 userMessage，当轮展开识图）。
+    // 普通消息的图片走 memory-log observer，两条写入路径互不重叠。
+    const imageIds = await persistEventImages(ctx.event);
+    return runAgentTurn(question, ctx, imageIds);
   },
 };

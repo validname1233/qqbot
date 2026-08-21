@@ -22,6 +22,7 @@ import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
 import type { BotEvent } from "../events/registry.js";
 import { memoryKey, formatSpeakerContent, buildLongTermContextText } from "./context.js";
+import { expandImagePlaceholders } from "./memory/images.js";
 import { callModel } from "../services/model.js";
 import { getSystemPrompt } from "../services/prompts/builder.js";
 import { runTool, toolSchemas } from "./registry.js";
@@ -40,9 +41,10 @@ const MAX_TOOL_TURNS = 1;
 // messages 用累加式的 ReducedValue：每个节点只管返回"这一步新增的消息"，
 // 图会自动 concat 到已有 messages 后面——不用像原来手写循环那样自己 push。
 // ctx 用 z.custom 只当类型标记，不做运行时校验（本来就是进程内对象，不需要校验）。
-// longTermContext：长期记忆注入文本，prepareContext 节点写入，llmCall/finalizeNode 读取——
-// 单聊/群聊的长期记忆内容来源不同，但对这里来说只是一个字符串字段，差异全在
-// agent/context.ts 的 buildLongTermContextText 内部（本次占位，恒为空字符串）。
+// longTermContext：长期记忆注入文本，prepareContext 节点写入，plainReply/finalize 读取。
+// imageIds：/Agent 消息自带图片的 message_images id 列表（agentService.handle 下载后
+// 传入），prepareContext 用来在当前 userMessage 里拼 [图片:<id>] 占位符。历史消息的
+// 占位符在落库时就已带上（memory-log observer / runAgentTurn 的 append）。
 const AgentState = new StateSchema({
   messages: new ReducedValue(z.custom<ChatMessage[]>(), {
     reducer: (current: ChatMessage[], next: ChatMessage[]) => [...current, ...next],
@@ -53,6 +55,7 @@ const AgentState = new StateSchema({
   turnCount: z.number().default(0),
   reply: z.string().nullable().default(null),
   longTermContext: z.string().default(""),
+  imageIds: z.custom<number[]>().default([]),
 });
 
 type AgentStateT = typeof AgentState.State;
@@ -60,21 +63,53 @@ type AgentUpdateT = typeof AgentState.Update;
 
 // 节点零：图的新起点。把"这一轮需要哪些上下文"集中在这一步准备好——
 // 取短期记忆历史（由 runAgentTurn 传入 state.history）、把当前这句话格式化
-// （群聊拼昵称前缀，单聊原样），拉长期记忆文本，拼出 messages 的初始内容。
-// 后面的节点只管读 state，不用各自判断"是不是群聊"。
+// （群聊拼昵称前缀，单聊原样）、拉长期记忆文本，最后把 history 和当前消息里的
+// [图片:<id>] 占位符展开成 [图片]{描述}（懒加载识图：描述此刻才生成，见
+// memory/images.ts）。后面的节点只管读 state，不用各自判断"是不是群聊"。
 async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   const event = state.ctx.event;
-  const formattedUserText = formatSpeakerContent(state.userText, event.authorName, event);
+
+  // 当前消息：占位符拼在文字前（与 memory-log 的口径一致），再套群聊昵称前缀。
+  const rawUserText = buildTextWithPlaceholders(state.userText, state.imageIds);
+  const formattedUserText = formatSpeakerContent(rawUserText, event.authorName, event);
+
+  // 展开懒加载占位符：history 的 user 消息 + 当前 userMessage（/Agent 带图当轮就要看）。
+  // 只展开 user 消息——assistant 回复万一复读了 "[图片:17]" 字样，不能被误替换。
+  // 展开后的 history 覆盖写回 state：finalize 节点读 state.history，必须拿到展开版。
+  const expandedHistory = await expandHistoryImages(state.history);
+  const expandedUserText = await expandImagePlaceholders(formattedUserText);
+
   const longTermContext = await buildLongTermContextText(event, state.userText);
 
-  const userMessage: ChatMessage = { role: "user", content: formattedUserText };
+  const userMessage: ChatMessage = { role: "user", content: expandedUserText };
   const initialMessages: ChatMessage[] = [
     { role: "system", content: getSystemPrompt(event, "agent_judge") },
-    ...state.history,
+    ...expandedHistory,
     userMessage,
   ];
 
-  return { messages: initialMessages, longTermContext };
+  return { messages: initialMessages, history: expandedHistory, longTermContext };
+}
+
+// 当前消息的占位符拼接：图片在前、文字在后。逻辑与 memory-log 的
+// buildContentWithPlaceholders 同款，这里不 import 是因为那边还要处理观察者
+// 特有的空文本分支——两处各留一份三行小函数，好过为一行逻辑建公共依赖。
+function buildTextWithPlaceholders(text: string, imageIds: number[]): string {
+  const parts: string[] = imageIds.map((id) => `[图片:${id}]`);
+  if (text !== "") parts.push(text);
+  return parts.join(" ");
+}
+
+// history 里 user 消息的图片占位符批量展开（并发识图在 expandImagePlaceholders
+// 内部做，这里只是逐条调用）。assistant/tool 消息原样保留。
+async function expandHistoryImages(history: ChatMessage[]): Promise<ChatMessage[]> {
+  return Promise.all(
+    history.map(async (msg) => {
+      if (msg.role !== "user" || msg.content === null) return msg;
+      const expanded = await expandImagePlaceholders(msg.content);
+      return expanded === msg.content ? msg : { ...msg, content: expanded };
+    }),
+  );
 }
 
 // 轮次用完但 reply 还是空时的收尾：单独拼一段提示词——人设 + 长期记忆 + 用户原始需求 +
@@ -149,8 +184,10 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
 // （纯工具判断人设，不适合直接展示给用户），所以再跑一次不带 tools 的调用，
 // 换成日常对话人设，让模型正常回答用户的问题。
 async function plainReply(state: AgentStateT): Promise<AgentUpdateT> {
-  // state.messages 结构：[0] agent_judge system, [1..n-1] history, [n] 当前用户消息, [n+1] 刚才 llmCall 返回的 assistant 消息
+  // state.messages 结构：[0] agent_judge system, [1..n-1] history(含展开后的图片描述), [n] 当前用户消息, [n+1] 刚才 llmCall 返回的 assistant 消息
   // 要构造的新 messages：[0] 日常对话人设的 system, [1] 长期记忆（如果有）+ history + 当前用户消息
+  // 图片描述已经内联在 history / 当前消息的 content 里（prepareContext 展开过），
+  // 这里不需要任何图片相关的特判——占位符"长在消息里"的方案红利。
   const historyAndUser = state.messages.slice(1, -1); // 去掉开头的 agent_judge 和结尾的 assistant 消息
 
   const messages: ChatMessage[] = [{ role: "system", content: getSystemPrompt(state.ctx.event, "daily") }];
@@ -193,7 +230,13 @@ async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
   // messages[0] 是 system prompt，之后是历史 + 这一轮新增的——挑出 role:"tool" 的
   // 部分喂给 synthesizeFinalReply，和原来 allToolMessages 的口径一致。
   const toolResults = state.messages.filter((msg) => msg.role === "tool");
-  const reply = await synthesizeFinalReply(state.userText, state.history, toolResults, state.longTermContext, state.ctx.event);
+  const reply = await synthesizeFinalReply(
+    state.userText,
+    state.history,
+    toolResults,
+    state.longTermContext,
+    state.ctx.event,
+  );
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
@@ -232,6 +275,7 @@ const agentGraph = new StateGraph(AgentState)
 export async function runAgentTurn(
   userText: string,
   ctx: MessageContext,
+  imageIds: number[] = [],
 ): Promise<string> {
   const key = memoryKey(ctx.event);
   const history = await sqliteMemoryStore.get(key);
@@ -243,17 +287,30 @@ export async function runAgentTurn(
     ctx,
     userText,
     history,
+    imageIds,
   });
 
   const reply = result.reply ?? "（Agent 没有返回内容）";
 
   // messages 里 [0] 是 system prompt，[1..history.length] 是历史，
   // 从 userMessage 开始往后的都是这一轮新增的——直接切片存进短期记忆。
+  // 注意存的是"占位符版"（prepareContext 展开前的原始消息）：messages 里的
+  // history 是展开版，但这一轮新增的切片（userMessage 及之后）来自初始构造，
+  // prepareContext 返回的 userMessage 已是展开版——所以这里要用占位符版重拼，
+  // 保证库里存的是引用（懒加载语义：描述不落库，下次读取再展开/复用缓存）。
   // 传入 author 信息：从事件中提取发言人的 openid 和昵称。
+  const event = ctx.event;
+  const rawUserText = buildTextWithPlaceholders(userText, imageIds);
+  const storedUserMessage: ChatMessage = {
+    role: "user",
+    content: formatSpeakerContent(rawUserText, event.authorName, event),
+  };
+  const newMessages = result.messages.slice(1 + history.length);
   await sqliteMemoryStore.append(
     key,
-    { openid: ctx.event.authorOpenid, name: ctx.event.authorName },
-    ...result.messages.slice(1 + history.length),
+    { openid: event.authorOpenid, name: event.authorName },
+    storedUserMessage,
+    ...newMessages.slice(1),
   );
 
   return reply;

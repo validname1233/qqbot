@@ -68,4 +68,7 @@ export const config = {
   // 多模态功能整体关闭。走 DashScope 的 OpenAI 兼容接口（阿里云国内端点，直连可用）。
   visionApiKey: optionalEnv("VISION_API_KEY", ""),
   visionModel: optionalEnv("VISION_MODEL", "qwen3.7-flash"),
+  // 单次 /Agent 最多识图张数（选填）。取窗口内最近的 N 张，防止一次 /Agent
+  // 因历史里堆了十几张图而爆量（既慢又贵）。默认 5。
+  visionMaxImages: optionalEnvNumber("VISION_MAX_IMAGES", 5),
 } as const;
