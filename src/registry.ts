@@ -11,7 +11,6 @@ import type { BotEvent } from "./events/registry.js";
 import { reminderService } from "./services/reminder.js";
 import { agentService } from "./services/agent.js";
 import { newsSubscriptionService } from "./services/news/subscription.js";
-import { markdownTestService } from "./services/markdown-test.js";
 import { setPersonalityService } from "./services/prompts/command.js";
 import { memoryLogObserver } from "./services/memory-log.js";
 import { logger } from "./services/logger.js";
@@ -33,8 +32,6 @@ registerCommand(reminderService);
 registerCommand(agentService);
 // 群新闻订阅：纯代码写死的固定功能，不经过 Agent/LLM 决策层，用户只能开关/调参。
 registerCommand(newsSubscriptionService);
-// Markdown 测试：测试 QQ 的 Markdown 渲染功能。
-registerCommand(markdownTestService);
 // 提示词自定义：按群设置自定义人格（人格+功能分离拼接）。
 registerCommand(setPersonalityService);
 

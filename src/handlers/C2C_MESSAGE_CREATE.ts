@@ -8,7 +8,8 @@
 // 输入一个强类型事件，自己负责回消息，不返回值。签名统一，dispatcher 才能一致地调。
 
 import type { C2CMessageEvent } from "../events/C2C_MESSAGE_CREATE/index.js";
-import { replyC2CMessage } from "../qq/messages.js";
+import { replyC2CMessage, replyC2CMarkdown } from "../qq/messages.js";
+import { logger } from "../services/logger.js";
 import {
   buildContext,
   runCommand,
@@ -31,10 +32,19 @@ export async function handleC2CMessage(event: C2CMessageEvent): Promise<void> {
     (r): r is string => r !== null && r !== "",
   );
 
-  // 逐条发回。msg_seq 从 1 递增——同一条 msgId 的第 n 次被动回复。
+  // Markdown 优先，失败回退纯文本。单聊客户端的 Markdown 渲染支持不如群聊稳定，
+  // 回退尤其重要——宁可降级成纯文本也不能让回复丢失。
   let seq = 1;
   for (const reply of replies) {
-    await replyC2CMessage(event.authorOpenid, reply, event.msgId, seq);
+    try {
+      await replyC2CMarkdown(event.authorOpenid, reply, event.msgId, seq);
+    } catch (err) {
+      logger.warn(
+        "webhook",
+        `单聊 Markdown 回复失败，回退纯文本（msgId=${event.msgId} seq=${seq}）: ${err instanceof Error ? err.message : err}`,
+      );
+      await replyC2CMessage(event.authorOpenid, reply, event.msgId, seq);
+    }
     seq += 1;
   }
 }

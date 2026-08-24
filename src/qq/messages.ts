@@ -91,6 +91,51 @@ export async function pushGroupMarkdown(
   });
 }
 
+// 发送群 Markdown 消息（被动回复）。
+// 和 pushGroupMarkdown 的关系同 replyGroupMessage/pushGroupMessage：带 msg_id/msg_seq
+// 即被动回复（5 分钟窗口内、免频控），body 结构与主动版一致（content 必须为空）。
+export async function replyGroupMarkdown(
+  groupOpenid: string,
+  markdownContent: string,
+  msgId: string,
+  msgSeq = 1,
+): Promise<void> {
+  await apiRequest(`/v2/groups/${groupOpenid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content: "",
+      msg_type: MSG_TYPE_MARKDOWN,
+      markdown: {
+        content: markdownContent,
+      },
+      msg_id: msgId,
+      msg_seq: msgSeq,
+    }),
+  });
+}
+
+// 发送单聊 Markdown 消息（被动回复）。结构与 replyGroupMarkdown 一致，路径不同。
+// 注意：单聊客户端对 Markdown 的渲染支持不如群聊稳定，调用方应做好失败回退。
+export async function replyC2CMarkdown(
+  openid: string,
+  markdownContent: string,
+  msgId: string,
+  msgSeq = 1,
+): Promise<void> {
+  await apiRequest(`/v2/users/${openid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content: "",
+      msg_type: MSG_TYPE_MARKDOWN,
+      markdown: {
+        content: markdownContent,
+      },
+      msg_id: msgId,
+      msg_seq: msgSeq,
+    }),
+  });
+}
+
 // 发送群消息（被动回复）。
 // groupOpenid：哪个群（来自事件的 groupOpenid）。
 // 其余参数含义同 replyC2CMessage。只是接口路径不同：群消息发到 /v2/groups/...。
