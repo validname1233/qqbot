@@ -24,18 +24,20 @@ export function memoryKey(event: BotEvent): string {
   return `c2c:${event.authorOpenid}`;
 }
 
-// 短期记忆的说话人格式化：群聊场景在 content 前拼"昵称："，单聊原样返回。
-// 只在"写入"这一个时机调用一次（loop.ts 的 prepareContext 节点构造 userMessage 时），
-// 存进短期记忆的内容已经带前缀，之后 sqlite.ts 读取不再二次处理，避免重复拼接。
+// 短期记忆的说话人格式化：所有场景统一在 content 前拼"昵称："，不再区分群聊/单聊——
+// 单聊也拼是为了让"昵称："前缀成为恒定格式，functional.ts 的 SPEAKER_NOTE 才能写成
+// 一条无分支的通用规则（不用再解释"单聊没有前缀"的例外），agent_judge 等共用场景
+// 的提示词也无需按场景分叉。只在"写入"这一个时机调用一次（loop.ts 的 prepareContext
+// 节点构造 userMessage 时），存进短期记忆的内容已经带前缀，之后 sqlite.ts 读取
+// 不再二次处理，避免重复拼接。群成员昵称可能为空（C2C 事件示例里 username 就是
+// 空串），空时用"用户"兜底，保证前缀格式恒存在。
 export function formatSpeakerContent(
   content: string,
   authorName: string,
-  event: BotEvent,
+  _event: BotEvent,
 ): string {
-  if (event.type !== "GROUP_AT_MESSAGE_CREATE" && event.type !== "GROUP_MESSAGE_CREATE") {
-    return content;
-  }
-  return `${authorName}：${content}`;
+  const speaker = authorName.trim() !== "" ? authorName : "用户";
+  return `${speaker}：${content}`;
 }
 
 // 长期记忆注入文本。单聊/群聊不分支：都是对 memoryKey(event) 这个 key 下的记忆做

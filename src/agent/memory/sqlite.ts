@@ -58,9 +58,9 @@ const insertStmt = db.prepare(`
 // 只取最近 MAX_MESSAGES 条：按 id 降序排（最新的在前），LIMIT 截断，然后在应用层再反转回正序。
 // 为什么不直接 ORDER BY id ASC LIMIT？因为 SQLite 的 LIMIT 是"取前 N 行"，如果升序取就是最老的 N 条，
 // 而我们要的是最新的 N 条，所以必须先降序 LIMIT、再反转。
-// 群聊场景的"昵称：内容"格式化已经在写入时做过（agent/context.ts 的 formatSpeakerContent，
-// 由 agent/loop.ts 的 prepareContext 节点调用），content 落库时已经带前缀，
-// 这里原样读出即可，不用再按 key 是否群聊二次加工。
+// "昵称：内容"的说话人格式化已经在写入时做过（agent/context.ts 的 formatSpeakerContent，
+// 由 agent/loop.ts 的 prepareContext 节点调用，单聊群聊统一拼前缀），content 落库时
+// 已经带前缀，这里原样读出即可，不用二次加工。
 const getStmt = db.prepare(
   `SELECT role, content, tool_calls, tool_call_id
    FROM short_term_messages
