@@ -12,6 +12,7 @@ import { reminderService } from "./services/reminder.js";
 import { agentService } from "./services/agent.js";
 import { newsSubscriptionService } from "./services/news/subscription.js";
 import { setPersonalityService } from "./services/prompts/command.js";
+import { deepSearchService } from "./services/deep-search.js";
 import { memoryLogObserver } from "./services/memory-log.js";
 import { logger } from "./services/logger.js";
 import { runSession } from "./session/runner.js";
@@ -34,6 +35,10 @@ registerCommand(agentService);
 registerCommand(newsSubscriptionService);
 // 提示词自定义：按群设置自定义人格（人格+功能分离拼接）。
 registerCommand(setPersonalityService);
+// 深度检索：独立工作流（Tavily 起点 + 多轮 open_page 深挖 + 汇总报告），
+// 与 /Agent 的浅检索互补；慢（几十秒）但深。显式命令触发，设计文档见
+// docs/superpowers/specs/2026-08-24-deep-web-browsing-design.md。
+registerCommand(deepSearchService);
 
 // 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
 // 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。

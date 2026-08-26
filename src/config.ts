@@ -74,4 +74,16 @@ export const config = {
   // 日志级别下限（选填）：debug / info / warn / error，默认 info。
   // debug 会打印每次 LLM 调用明细；非法值回退 info。见 services/logger.ts。
   logLevel: optionalEnv("LOG_LEVEL", "info"),
+  // 深度检索（/深度检索）的预算与抓取限制（选填，均有默认值）：
+  //   browseMaxTurns         —— 深检图 browseLlm⇄browseTools 循环上限（日常 Agent 的
+  //                             MAX_TOOL_TURNS 保持 1，互不影响）。
+  //   browsePageTimeoutMs    —— 单页抓取/动作超时。
+  //   browseTotalBudgetMs    —— 整轮深检墙钟预算，超了强制进收尾（QQ 群被动回复窗口 5 分钟）。
+  //   browseMaxContentTokens —— 单页正文截断上限（按字符折算，中文 1 字≈1 token）。
+  //   browseMaxLinks         —— 每页返回给模型的链接表上限。
+  browseMaxTurns: optionalEnvNumber("BROWSE_MAX_TURNS", 6),
+  browsePageTimeoutMs: optionalEnvNumber("BROWSE_PAGE_TIMEOUT_MS", 10000),
+  browseTotalBudgetMs: optionalEnvNumber("BROWSE_TOTAL_BUDGET_MS", 60000),
+  browseMaxContentTokens: optionalEnvNumber("BROWSE_MAX_CONTENT_TOKENS", 3000),
+  browseMaxLinks: optionalEnvNumber("BROWSE_MAX_LINKS", 30),
 } as const;
