@@ -14,9 +14,11 @@ const personalityCache = new Map<string, string>();
 // 人设文本对判断是纯噪声，还会让"按群自定义人格"间接改变工具判断行为。
 // deep_browse（深检浏览决策）同理——它输出的材料小结只留在浏览记录里供
 // synthesize 参考，不直接展示给用户。
+// deep_plan（深检计划制定）同理——计划只进思维链，人设是噪声。
 // 以后若新增类似"只做结构化判断"的场景，往这个集合里加一项即可。
 const PURE_FUNCTIONAL_SCENES: ReadonlySet<PromptScene> = new Set<PromptScene>([
   "agent_judge",
+  "deep_plan",
   "deep_browse",
 ]);
 

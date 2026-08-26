@@ -3,12 +3,14 @@
 // 翻页/展开、填写搜索框。动作经 browser.ts 的串行链排队（A 档），动作后拿渲染完的
 // HTML 复用 extract.ts 提取——与 open_page 返回格式完全一致。
 //
-// 同样只挂深检图工具列表，不进共享注册表（理由见 open-page.ts 头注释）。
+// 同样只注册进深检注册表（deep-search/registry.ts），不进全局注册表（理由见 open-page.ts）。
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { BotEvent } from "../../events/registry.js";
+import type { Tool } from "../tool.js";
 import type { ToolSchema } from "../types.js";
+import type { MessageContext } from "../../types.js";
 import { withPage } from "../../services/browse/browser.js";
 import { extractPage, formatPageForModel } from "../../services/browse/extract.js";
 import { savePage } from "../../services/browse/page-pool.js";
@@ -56,6 +58,15 @@ const ROLE_ALIASES: Record<string, string> = {
   checkbox: "checkbox",
   tab: "tab",
   menuitem: "menuitem",
+};
+
+// Tool 契约导出：注册进深检注册表用。runInteractPage 内部已自带 try/catch
+// 兜底（细粒度错误文案让模型自愈），不会再向外抛异常。
+export const interactPageTool: Tool = {
+  name: "interact_page",
+  description: interactPageSchema.function.description,
+  parameters: interactPageSchema.function.parameters,
+  run: (args: Record<string, unknown>, ctx: MessageContext) => runInteractPage(args, ctx.event),
 };
 
 export async function runInteractPage(

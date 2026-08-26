@@ -2,7 +2,7 @@
 
 > 状态：设计稿（未实现）
 > 前置依赖：`src/agent/loop.ts`（LangGraph 五节点图——只借鉴模式，不改一行）、`src/services/search.ts`（Tavily 起点）、`src/services/model.ts`（callModel）、`src/services/prompts/`（场景化提示词）
-> 日期：2026-08-24 初稿；2026-08-25 修订——编排层从「扩展日常 Agent 循环」改为「独立深度检索工作流」（§3.1），能力层设计（抓取/解析/缓存/安全）不变
+> 日期：2026-08-24 初稿；2026-08-25 修订——编排层从「扩展日常 Agent 循环」改为「独立深度检索工作流」（§3.1），能力层设计（抓取/解析/缓存/安全）不变；2026-08-26 修订一——起点 URL 预读（§5.2）；2026-08-26 修订二——plan & execute：planNode + 思维链（§5.2、§5.4）；2026-08-26 修订三——思维链产生机制定为「一次调用双职责 + 合成兜底」（§5.2）、记忆策略确认保持「问题 + 报告」两条（中间 messages 从不落库，§3.5）
 
 ## 1. 背景与目标
 
@@ -85,11 +85,13 @@
 - 深挖是"一次 /深度检索 内的多轮工具调用"，进程内存即可满足，无需 SQLite（与图片池 `agent/memory/images.ts` 需要跨消息持久不同——页面随时可以重新抓）。
 - 已知小竞态：同一用户并发两次深检仍共享一个池，链接编号可能被后一次覆盖。概率低、后果轻（模型拿到另一页的链接，可改传完整 URL 自愈）；要彻底解决需把编号表挂到每次图运行的调用上下文，留作实现后视情况。
 
-### 3.5 记忆策略：只落「问题 + 报告」两条
+### 3.5 记忆策略：只落「问题 + 报告」两条，中间 messages 从不落库（修订三确认）
 
 - memory-log observer 只落 `command === null` 的消息，`/深度检索 xxx` 不会经由观察者入库——深检服务自己负责落库（与 agentService 对 /Agent 的责任划分同款）。
-- 图结束后向 `memoryKey` 落两条：user = 问题原文（带说话人前缀），assistant = 最终报告。中间过程（assistant 的 tool_calls、tool 的页面正文）**全部不落库**。
-- 效果：后续 `/Agent` 能看到"刚才查过什么、结论是什么"（可追问"把刚才查的展开讲讲"），但 20 条窗口和上下文不被页面正文挤爆。
+- 图的中间过程（plan、思维链、assistant 的 tool_calls、tool 的页面正文）**全部不落库**——它们只活在图的 state.messages 里，runDeepSearch 从不把 state.messages 写进 sqlite。
+- 修订三确认：图结束后向 `memoryKey` 落 **两条**——user = 问题原文（带说话人前缀）、assistant = 最终报告。两条都是"结晶"：一条记录问了什么（含发起人），一条记录查到了什么；中间的几百次往返都是过程噪声，不值得占窗口。
+- 效果：后续 `/Agent` 能看到"刚才查过什么、结论是什么"（可基于报告追问展开），20 条窗口一次深检只占 2 格，上下文不被页面正文挤爆。
+- 实现现状：runDeepSearch 的落库代码（手写两行 append）已是这个口径，无需改动。
 
 ### 3.6 解析层引入 cheerio：对"内置优先"口味的论证
 
@@ -98,7 +100,7 @@
 ## 4. 架构总览
 
 ```text
-用户: /深度检索 量子纠缠最新的实验进展
+用户: /深度检索 量子纠缠最新的实验进展（消息里可带 URL 起点）
         │
         ▼
   deepSearchService（src/services/deep-search.ts，CommandService 壳）
@@ -107,17 +109,23 @@
   runDeepSearch（src/agent/deep-search.ts，独立 StateGraph）
         │
   ┌─────▼─────────────────────────────────────────────────┐
-  │ searchNode    Tavily 起点检索（确定性，无模型参与）          │
-  │               问题 → top-6 标题+URL+摘要，拼进首条 user 消息 │
-  │               （参数本身是 URL 时跳过，直接以它为起点）        │
+  │ searchNode    起点装配（确定性，无模型参与）                  │
+  │               URL 预读成页面材料（≤5 个，全败才退化          │
+  │               Tavily 起点），拼进首条 user 消息              │
   ├─────────────────────────────────────────────────────────┤
-  │ browseLlm ↔ browseTools    深挖循环（模型驱动导航）           │
-  │   browseLlm    callModel(flash 模型, tools=[open_page])  │
-  │   browseTools  执行 open_page（url 或 link 编号）           │
+  │ planNode      制定调研计划（flash，deep_plan 纯功能场景）    │
+  │               看过起点材料再定方向 → 写入思维链 chain[0]     │
+  │               （三期登录检测的挂点，见 §5.2）                │
+  ├─────────────────────────────────────────────────────────┤
+  │ browseLlm ⇄ browseTools    深挖循环（plan & execute）       │
+  │   browseLlm    思维链注入提示词末尾 → callModel(flash+tools) │
+  │                content（本步小结）追加进 chain               │
+  │   browseTools  执行 open_page / interact_page             │
   │   ↻ 条件边：还有 tool_calls 且轮次/墙钟预算未耗尽 → 继续       │
   │             否则（模型主动停 或 预算耗尽）→ synthesize       │
   ├─────────────────────────────────────────────────────────┤
-  │ synthesize    汇总报告（pro 模型 + thinking，deep_report）  │
+  │ synthesize    汇总报告（pro + thinking，deep_report；      │
+  │               user 消息含思维链 = 计划与逐步进展）            │
   └─────┬─────────────────────────────────────────────────┘
         ▼
   回复（Markdown，走 handler 现有 markdown-first 发送）
@@ -140,22 +148,37 @@
 ### 5.1 命令入口：/深度检索
 
 - CommandService：name `深度检索`，别名 `ds`。空参数 → 用法提示（`用法：/深度检索 想深入调研的问题`）。
-- 参数以 `http(s)://` 开头 → 视为用户直接给起点 URL，跳过 Tavily（searchNode 直接以该 URL 为起点材料）。
+- 参数里可以带 http(s) URL（正则提取，最多 5 个），URL 之外的文字是问题本体——两种形态自由组合："`/深度检索 https://a.com/x 帮我总结要点`"或纯问题。
 - 不做会话锁定（一次性命令，与猜数字状态机不同）：执行期间同会话的其它消息正常处理，互不阻塞。
 
-### 5.2 深检图节点
+### 5.2 深检图节点（2026-08-26 修订二：plan & execute——planNode + 思维链）
 
-State：`question / ctx / messages（ReducedValue 累加）/ turnCount / deadline / report`。
+图结构：`searchNode → planNode → (browseLlm ⇄ browseTools)* → synthesize → END`。
 
-- **searchNode**：`tavilySearch(question)`——basic 深度、默认条数 6，复用 `search.ts` 现有默认值；0 结果也继续（deep_browse 提示词告知可用 open_page 打开搜索引擎结果页自寻起点，见 §8）。设 `deadline = now + BROWSE_TOTAL_BUDGET_MS`。初始 messages = `[system: deep_browse] + [user: 问题 + 起点列表]`。
-- **browseLlm**：`callModel(messages, [open_page 的 schema], config.aiModel, false)`。flash 足够——导航判断是轻任务，且要调很多次。
-- **browseTools**：解析 tool_calls、并发执行 open_page、tool 消息拼回 messages、turnCount+1。（同域名串行由 fetch 层的进程级队列保证，跨会话也生效，见 §6.3。）
+State：`question / ctx / messages（ReducedValue 累加）/ chain（思维链，string[]）/ turnCount / deadline / report`。
+
+- **searchNode（起点装配，2026-08-26 修订一：URL 预读替代"模型自己打开用户 URL"）**：入口三情形——
+  1. **消息里带 URL** → 正则提取（≤5 个，排除尾随中文标点）后**逐个预读成页面材料**（`Promise.allSettled` 并行，复用 open_page 的 loadPage 管线：fetch→extract→入池→格式化）。不经模型转手：用户指明的那一跳没有判断成分，不该交给模型"抄写进工具参数"——这是全链路最后一个必须逐字抄 URL 的点，也是幻觉/丢字风险最集中的点（§3.2：无判断的步骤该是确定性代码）。部分失败是常态：成功的页面进材料；失败的注记"以下网址无法访问：…（原因），请勿再尝试打开"；**全部失败才跑 Tavily 兜底**（部分成功时再搜索只添噪音），且明确告诉模型"用户提供的网址访问失败，以下是搜索得到的起点材料"。
+  2. **没有 URL** → `tavilySearch(question)`（basic 深度、默认条数 6，复用 `search.ts` 现有默认值），拼"以下是搜索得到的起点材料"——不提"访问失败"字样，凭空提失败反而诱导模型重试。
+  3. **Tavily 0 结果** → 提示模型可用 open_page 打开搜索引擎结果页自寻起点（见 §8）。
+  预读与搜索都计入墙钟预算：`deadline = now + BROWSE_TOTAL_BUDGET_MS` 在本节点开头设定。初始 messages = `[system: deep_browse] + [user: 问题（去掉 URL 的文字部分）+ 起点材料]`。
+- **planNode（修订二新增：制定计划）**：排在起点装配之后的专职第二步。输入 = searchNode 拼好的问题 + 起点材料（system 换 `deep_plan` 场景），调 flash、**不带 tools**——计划是纯文本方向而非动作；三期的 login 工具就位后才给它工具表。输出几条简明调研方向（要核实什么、材料还缺什么、第一步跟哪个链接），写入 `chain[0]`，不追加进 messages——浏览循环经思维链注入读它，两条通道只会重复。**放在 searchNode 之后（先见材料再定计划）**是关键：URL 预读的红利在这里变现——登录墙、付费墙、空壳 SPA 在计划阶段就能被看见，对策直接写进计划（换来源/改用 interact_page）。**三期登录检测的挂点**：预读材料若显示"需要登录才能看内容"，planNode（届时带 login 工具）在此触发登录流程，browseLlm 接手时起点已是可读内容——登录是"计划层的判断"，不该散落在浏览循环里。deadline 已耗尽（预读+计划吃光预算的极端情况）→ 跳过浏览直接 synthesize。planNode 不计入 turnCount（它不是浏览轮次，墙钟预算已覆盖它的耗时）。
+- **browseLlm（修订二：思维链注入 + 工具决策）**：调用前把 chain 拼成一条临时 system 消息附在 messages 末尾（`[调研计划与进展]（这是你此前的思考记录，请延续编号继续维护）1.（计划）… 2.（第1步）…`——认领式措辞让模型把链当成自己思考的连续体，而非外部塞进来的指令），再 `callModel(拼接后的消息, toolSchemas(), config.aiModel, false)`。flash 足够——导航判断是轻任务，且要调很多次。链文**只进本次调用、不进 state.messages**，两个原因：其一，链文若入库，每轮一份越来越长的快照会在历史里滚雪球；其二，OpenAI 兼容接口要求 assistant(tool_calls) 消息后紧跟对应的 tool 结果消息，链文入库很难保证插入位置不破坏这个邻接——临时注入天然规避（附在末尾，永远在最后一组 tool 结果之后）。模型输出的 content 追加进 chain——**「一次调用双职责」（修订三确认产生机制）**：content 是复盘（进展到哪、刚读到什么、与计划的关系）+ 前瞻（下一步为什么调这个工具），tool_calls 是动作，即 ReAct 的 Thought 与 Action 同体；deep_browse 提示词强制调工具时必须同时输出 content。**content 为 null 的兜底**：DeepSeek 这类接口带 tool_calls 时 content 可能为 null（模型的注意力全给了工具参数，提示词压不死），此时代码从 tool_calls 合成最小条目（`第N步：调用了 open_page(link:3)`）追加进链——合成条目只有动作没有判断（行车记录仪，不是方向盘），有 content 时永远用 content，链永不间断。链长有界（1 条计划 + ≤6 步，每条一两句），无需压缩机制。最后一轮"无 tool_calls"的输出就是材料小结，自然成为链尾。
+- **browseTools**：解析 tool_calls、并发执行、tool 消息拼回 messages、turnCount+1。（open_page 可真并发——同域名串行由 fetch 层的进程级队列保证，跨会话也生效，见 §6.3；interact_page 经 browser.ts 的链自动串行。）
 - **路由（条件边）**：
-  - browseLlm 后：无 tool_calls → synthesize（模型自认材料够了）；有 tool_calls 且 `turnCount < BROWSE_MAX_TURNS` 且 `now < deadline` → browseTools；否则 → synthesize（预算耗尽的优雅降级，绝不报错收场）。
+  - planNode 后：`now < deadline` → browseLlm；否则 → synthesize（预算耗尽的优雅降级）。
+  - browseLlm 后：无 tool_calls → synthesize（**Claude Code 式的自然退出**：工具循环的结束信号就是模型不再要工具——本图现有行为，修订二把它确认为正式设计语义）；有 tool_calls 且 `turnCount < BROWSE_MAX_TURNS` 且 `now < deadline` → browseTools；否则 → synthesize（预算耗尽的优雅降级，绝不报错收场）。
   - browseTools 后：`now < deadline` 且 `turnCount < BROWSE_MAX_TURNS` → browseLlm；否则 → synthesize。
-- **synthesize**：仿 `synthesizeFinalReply` 的两条消息模式——system 用 `deep_report` 场景（带人设），user 放问题 + 起点列表 + 全部浏览记录；`config.agentModel`（pro）+ `enableThinking=true`。提示词要求报告精炼（约 1500 字内，QQ 消息有长度上限）。
+- **synthesize（修订二：增加思维链）**：仿 `synthesizeFinalReply` 的两条消息模式——system 用 `deep_report` 场景（带人设），user 放问题 + 起点列表 + **思维链（计划与逐步进展）** + 全部浏览记录；`config.agentModel`（pro）+ `enableThinking=true`。浏览记录给证据，思维链给意图脉络，报告模型两者都有。提示词要求报告精炼（约 1500 字内，QQ 消息有长度上限）。
 
-模型分工沿用现有惯例：导航用 flash（多次、便宜），成文用 pro（一次、要质量）——与 loop.ts 里 llmCall 用 aiModel / finalize 用 agentModel 的拆分同构。
+**chain（思维链）机制小结**：
+
+- 写入方：planNode 写 chain[0]（计划）；browseLlm 每轮把模型 content（本步复盘 + 下一步指示）追加为 chain[N]，content 为 null 时从 tool_calls 合成最小条目兜底（详见 browseLlm 条）。
+- 读取方：browseLlm（注入提示词末尾——工具结果越积越多时，紧凑的计划+进展在提示词末尾重新拉回模型注意力，对抗上下文稀释）；synthesize（作为"调研计划与进展"段）。
+- 刻意不进 state.messages：理由见 browseLlm 条。
+- **刻意不加进 loop.ts 的 AgentState**：两张图的状态本就不同构（loop 有 history/longTermContext/imageIds，深检有 question/deadline/report），"一致性"并不存在；恒空的字段是死状态，对读者是噪声。日常 Agent 需要 plan & execute 时再加——那时它有自己独立的注入语义（要连同 plainReply/finalize 怎么消费链一起设计），照搬深检的字段反而缚手脚。
+
+模型分工沿用现有惯例：计划与导航用 flash（多次、便宜），成文用 pro（一次、要质量）——与 loop.ts 里 llmCall 用 aiModel / finalize 用 agentModel 的拆分同构。
 
 ### 5.3 一期工具：`open_page`
 
@@ -181,9 +204,10 @@ State：`question / ctx / messages（ReducedValue 累加）/ turnCount / deadlin
 - `link` 在人粒度页面池里查最近一次 open_page 的链接编号表；编号过期（翻页/新页面）→ 明确报"链接编号已失效，请重新 open_page"；
 - 返回正文按 token 截断——**更正初稿**：`src/services/tokenizer.ts` 是给长期记忆 BM25 用的中文分词器，不是 token 计数器，不能复用。一期按字符折算（中文 ≈ 1 字 / token），不为此引入 token 计数依赖。
 
-### 5.4 提示词场景（functional.ts 新增两个 scene）
+### 5.4 提示词场景（functional.ts 新增三个 scene）
 
-- `deep_browse`（纯功能场景，加进 builder.ts 的 `PURE_FUNCTIONAL_SCENES`）：浏览纪律——起点已在首条消息给出、预算有限、跟进链接用 link 编号、围绕问题深挖、信息足够时**停止调用工具并输出一段简短的材料小结**（小结会留在浏览记录里，供 synthesize 参考）。
+- `deep_plan`（纯功能场景，加进 builder.ts 的 `PURE_FUNCTIONAL_SCENES`；修订二新增）：计划制定——输入问题 + 起点材料，输出几条简明的调研方向（要核实什么、材料还缺什么、第一步跟哪个链接/搜什么）。要求识别材料质量问题（登录墙、空正文、死链）并把对策写进计划（换来源/改用 interact_page）。纯文本输出、不执行动作——三期登录工具就位后，这个场景才随 planNode 一起获得工具表。
+- `deep_browse`（纯功能场景，加进 builder.ts 的 `PURE_FUNCTIONAL_SCENES`）：浏览纪律——起点已在首条消息给出、预算有限、跟进链接用 link 编号、围绕问题深挖、信息足够时**停止调用工具并输出一段简短的材料小结**（小结会留在浏览记录里，供 synthesize 参考）；**调用工具时 content 必须同时输出本步复盘（进展到哪、刚读到什么）与下一步指示（为什么调这个工具）**——它是思维链的下一环，会被追加进 [调研计划与进展] 指导后续决策（修订二定协议，修订三确认产生机制见 §5.2 browseLlm 条）。
 - `deep_report`（带人设，仿 agent_finalize）：基于材料成文，不提过程性描述（"我调用了工具"之类），专业内容收起人设语气、首尾可点缀一两句，OUTPUT_FORMAT_RULE 沿用现有规则。
 - 日常场景（daily / agent_judge 等）**零改动**——深检不进它们的提示词，模型永远不需要"判断要不要深检"。
 
@@ -318,10 +342,10 @@ login 状态机启动（会话锁定，后续消息进状态机不进 agent）
 2. 新建 `src/services/browse/extract.ts`——cheerio 解析（正文启发式 + 链接编号表）；
 3. 新建 `src/services/browse/page-pool.ts`——人粒度页面缓存；
 4. 新建 `src/agent/tools/open-page.ts`——按 §5.3 契约实现；
-5. 新建 `src/agent/deep-search.ts`——深检图（searchNode / browseLlm / browseTools / synthesize + 条件边）；
+5. 新建 `src/agent/deep-search.ts`——深检图（searchNode / planNode / browseLlm / browseTools / synthesize + 条件边）；
 6. 新建 `src/services/deep-search.ts`——CommandService 壳（/深度检索，别名 ds）；
 7. 改 `src/registry.ts`——补一行 `registerCommand(deepSearchService)`；
-8. 改 `src/services/prompts/functional.ts` + `builder.ts`——新增 deep_browse / deep_report 场景，deep_browse 进 PURE_FUNCTIONAL_SCENES；
+8. 改 `src/services/prompts/functional.ts` + `builder.ts`——新增 deep_plan / deep_browse / deep_report 场景，deep_plan 与 deep_browse 进 PURE_FUNCTIONAL_SCENES；
 9. 改 `src/config.ts` + `.env.example`——新增 §6.1 配置项；
 10. 改 `package.json`——+cheerio。
 
@@ -362,8 +386,8 @@ login 状态机启动（会话锁定，后续消息进状态机不进 agent）
 
 修改文件：
   src/registry.ts                     +1 行 registerCommand
-  src/services/prompts/functional.ts  +deep_browse / deep_report 场景
-  src/services/prompts/builder.ts     PURE_FUNCTIONAL_SCENES +deep_browse
+  src/services/prompts/functional.ts  +deep_plan / deep_browse / deep_report 场景
+  src/services/prompts/builder.ts     PURE_FUNCTIONAL_SCENES +deep_plan、deep_browse
   src/config.ts / .env.example        BROWSE_* 配置项
   package.json                        +cheerio（一期）、+playwright（二期）
 
@@ -372,7 +396,7 @@ login 状态机启动（会话锁定，后续消息进状态机不进 agent）
   playwright（二期，含浏览器二进制；三期零新增）
 
 不改动（与初稿的关键差异）：
-  src/agent/loop.ts                   MAX_TOOL_TURNS 保持 1，日常 Agent 行为不变
+  src/agent/loop.ts                   MAX_TOOL_TURNS 保持 1，日常 Agent 行为不变；思维链字段也刻意不加（理由见 §5.2 chain 小结）
   src/services/agent.ts               工具注册不动，open_page 不进共享注册表
   src/handlers/*、src/events/*        深检回复走现有 markdown-first 链路
 ```
