@@ -157,11 +157,15 @@ async function searchNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
     parts.push(await searchStartMaterial(question));
   }
 
+  // user 消息只放数据（问题+起点材料），不放指令——"开始调研"的指令在 deep_browse
+  // 系统提示词里本来就有。保持纯数据的原因：这条消息会被 planNode 原样重发
+  // （换 deep_plan 信封），也会被 synthesize 引用为"起点材料"，混进指令对两个
+  // 消费者都是噪声。
   const initialMessages: ChatMessage[] = [
     { role: "system", content: getSystemPrompt(state.ctx.event, "deep_browse") },
     {
       role: "user",
-      content: `用户的调研问题是：${cleaned !== "" ? cleaned : question}\n\n${parts.join("\n\n")}\n\n请开始逐步深入调研。`,
+      content: `用户的调研问题是：${cleaned !== "" ? cleaned : question}\n\n${parts.join("\n\n")}`,
     },
   ];
 
@@ -196,7 +200,13 @@ async function planNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
     "planNode",
   );
 
-  return { chain: [plan.content ?? "（计划生成为空，直接开始浏览）"] };
+  const planText = plan.content ?? "（计划生成为空，直接开始浏览）";
+  // 链全文打 debug：计划是 chain[0]，浏览每步的思维链都有对应日志，排查
+  // 导航行为时可以完整复盘模型的思考轨迹。多行 content 原样输出不截断——
+  // 截断的思考链没有排查价值（vision.ts 的 150 字截断是给"看一眼"用的，
+  // 这里是给"逐环分析"用的，口径不同）。
+  logger.debug("agent", `思维链[0/计划]: ${planText}`);
+  return { chain: [planText] };
 }
 
 // 节点三：浏览决策。调用前把思维链拼成一条临时 system 消息附在 messages 末尾
@@ -226,6 +236,10 @@ async function browseLlm(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   const content = response.content ?? "";
   const stepNote =
     content.trim() !== "" ? content.trim() : synthesizeStepNote(response.tool_calls);
+
+  // 链全文打 debug（与 planNode 的计划日志同一口径）：第 N 步的思维链在
+  // LOG_LEVEL=debug 下完整可复盘，多行 content 原样输出。
+  logger.debug("agent", `思维链[${state.chain.length + 1}]: ${stepNote}`);
 
   return {
     messages: [{ role: "assistant", content: response.content, tool_calls: response.tool_calls }],
