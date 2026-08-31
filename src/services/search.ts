@@ -73,8 +73,19 @@ async function tavilySearch(
     }),
   });
 
+  // 响应一到手就记录（成败都有）：排查时先看这条确认"请求确实到达了对端、拿到什么状态"，
+  // 再决定往下看成功解析还是错误分支。与 !response.ok 分支里的 warn 是配合关系。
+  logger.info(
+    "search",
+    `tavilySearch 响应 status=${response.status} ok=${response.ok} query="${query.slice(0, 50)}"`,
+  );
+
   if (!response.ok) {
     const detail = await response.text();
+    logger.warn(
+      "search",
+      `tavilySearch 失败 status=${response.status} query="${query.slice(0, 50)}" detail=${detail.slice(0, 300)}`,
+    );
     throw new Error(`Tavily 接口返回 ${response.status}: ${detail}`);
   }
 
@@ -134,8 +145,18 @@ async function aliyunSearch(
     }),
   });
 
+  // 响应一到手就记录（成败都有）：与 tavily 侧同款，排查时先看这条确认请求到达对端。
+  logger.info(
+    "search",
+    `aliyunSearch 响应 status=${response.status} ok=${response.ok} query="${query.slice(0, 50)}"`,
+  );
+
   if (!response.ok) {
     const detail = await response.text();
+    logger.warn(
+      "search",
+      `aliyunSearch 失败 status=${response.status} query="${query.slice(0, 50)}" detail=${detail.slice(0, 300)}`,
+    );
     throw new Error(`阿里联网搜索接口返回 ${response.status}: ${detail}`);
   }
 
@@ -161,12 +182,22 @@ export async function webSearch(
 ): Promise<SearchResult[]> {
   const provider = PROVIDERS[config.searchProvider];
   if (provider === undefined) {
+    logger.error("search", `webSearch 配置错误：SEARCH_PROVIDER=${config.searchProvider}（可用：${Object.keys(PROVIDERS).join("/")}）`);
     throw new Error(`未知的 SEARCH_PROVIDER: ${config.searchProvider}（可用：${Object.keys(PROVIDERS).join("/")}）`);
   }
   const t0 = Date.now();
-  const results = await provider(query, maxResults, searchDepth);
-  logger.debug("search", `webSearch[${config.searchProvider}] "${query}" → ${results.length} 条 (+${Date.now() - t0}ms)`);
-  return results;
+  try {
+    const results = await provider(query, maxResults, searchDepth);
+    logger.debug("search", `webSearch[${config.searchProvider}] "${query}" → ${results.length} 条 (+${Date.now() - t0}ms)`);
+    return results;
+  } catch (error) {
+    // provider 抛错（含 !response.ok 的接口失败与网络异常）在重新抛出前统一记录：
+    // 三个调用方的兜底逻辑各不相同（工具兜成失败短语/深检走 Tavily 兜底），但日志
+    // 只在这里记一次就够——provider 内部已带 status/detail 的明细行。
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("search", `webSearch[${config.searchProvider}] 失败 (+${Date.now() - t0}ms) query="${query.slice(0, 50)}" error=${message.slice(0, 300)}`);
+    throw error;
+  }
 }
 
 // 把结果列表整理成一段文本——只给「标题+链接+摘要」，不用搜索服务自带的总结，
