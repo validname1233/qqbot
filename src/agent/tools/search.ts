@@ -1,12 +1,13 @@
-// agent/tools/search.ts —— 把 Tavily 联网搜索包装成 Agent 可调用的工具。
-// 具体请求/解析逻辑全在 services/search.ts，这里只做「模型给的结构化参数 → 调用」的转换。
+// agent/tools/search.ts —— 把联网搜索包装成 Agent 可调用的工具。
+// 具体请求/解析/源切换逻辑全在 services/search.ts（webSearch 按 SEARCH_PROVIDER
+// 分发到 tavily/aliyun），这里只做「模型给的结构化参数 → 调用」的转换。
 
 import type { Tool } from "../tool.js";
 import {
   DEFAULT_MAX_RESULTS,
   DEFAULT_SEARCH_DEPTH,
   formatSearchResults,
-  tavilySearch,
+  webSearch,
 } from "../../services/search.js";
 
 export const searchTool: Tool = {
@@ -43,7 +44,7 @@ export const searchTool: Tool = {
     const searchDepth =
       args.search_depth === "advanced" ? "advanced" : DEFAULT_SEARCH_DEPTH;
 
-    const results = await tavilySearch(query, maxResults, searchDepth);
+    const results = await webSearch(query, maxResults, searchDepth);
     return formatSearchResults(results);
   },
 };

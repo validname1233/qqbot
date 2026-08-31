@@ -1,5 +1,5 @@
 // services/embedding.ts —— 调用智谱 BigModel 的文本嵌入接口，给长期记忆 RAG 召回用。
-// 职责单一：给一段文本，返回它的 embedding 向量。角色和 search.ts 的 tavilySearch 一样，
+// 职责单一：给一段文本，返回它的 embedding 向量。角色和 search.ts 的 webSearch 一样，
 // 是个纯函数服务，不实现 CommandService。
 
 import { config } from "../config.js";

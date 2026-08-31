@@ -237,6 +237,26 @@ State：`question / ctx / messages（ReducedValue 累加）/ chain（思维链�
 - Playwright 浏览器的生命周期按 §5.6 的三档渐进演进：起步只做图级（一次深检请求一套浏览器），后续视需要再放开进程级与持久化；
 - 二期新增 `MAX_INTERACT_TURNS` 独立预算，交互轮次与阅读轮次分开计数；interact_page 同样只挂深检图的工具列表，不进共享注册表。
 
+**Playwright/Chromium 能力清单**（实现 interact_page 及后续扩展时选型的 API 地图，按"是否已被本项目使用"标注）：
+
+| 能力类别 | 代表 API | 返回值 | 本项目 |
+|---|---|---|---|
+| 导航 | `page.goto(url)` / `goBack()` / `reload()` | `Promise<HttpResponse>`（主文档响应，含状态码） | ✅ goto |
+| 等待 | `page.waitForLoadState()` / `waitForSelector()` / `waitForURL()` | `Promise<void>`（等到即 resolve，超时抛错） | ✅ waitForLoadState |
+| 查询（读） | `page.title()` / `page.url()` / `page.content()` | 字符串——**content() 返回渲染后 HTML，是动态路径的核心产出** | ✅ 三者 |
+| 交互（写） | `locator.click()` / `.fill()` / `.press()` / `.check()` / `page.mouse.wheel()` | `Promise<void>`（动作无返回值，效果体现在之后的 DOM） | ✅ click/fill/wheel |
+| 定位器 | `page.getByRole()` / `getByText()` / `getByPlaceholder()` / `locator(css)` | `Locator` 对象（**惰性**：创建时不查找，动作时才解析） | ✅ getByRole/getByPlaceholder |
+| 截图 | `page.screenshot()` | `Promise<Buffer>`（图片字节，可落盘） | ✅ 存盘不分析 |
+| 执行任意 JS | `page.evaluate(() => ...)` | 回调返回值的序列化结果 | ❌ 刻意不用 |
+| 网络监听/拦截 | `page.on("request"/"response")` / `page.route()` | 事件回调（可拦截改写请求） | ❌ 未用 |
+| 会话管理 | `context.cookies()` / `storageState()` / `launchPersistentContext()` | cookie 对象 / 登录态 JSON / 持久会话 | ❌ 三期扫码登录用 |
+
+三个使用要点：
+
+1. **"写后读"拼接模式**：Playwright 的交互类 API 大多返回 `void`（动作确认而非数据），页面数据要靠查询类 API 单独取。interact_page 的完整动作单元固定为 `goto → 交互动作 → waitForLoadState → page.content() → cheerio 提取`——把"写"和"读"拼成一次工具调用，且产出与 open_page 走同一条 extract 管线、同一种三段式格式，模型无需感知页面来源差异；
+2. **不使用 `page.evaluate` 的原因**：我们的工具协议是"模型传意图（action/target/value），代码翻译成 API 调用"，不让模型写 JS 塞进页面执行——任意 JS 执行有安全面（可绕过提取层直接操作页面），且模型生成 JS 的出错率远高于描述意图。若未来确需页面内计算（如取 JS 变量值），再评估放开；
+3. **Locator 惰性语义**：`getByRole("button", { name: "下一页" })` 创建时不接触 DOM，真正 click 时才查找——找不到/不可点的报错发生在动作阶段，所以错误兜底（interact-page.ts 的 catch）要包住整个动作而非仅定位语句。
+
 ### 5.6 浏览器生命周期：三档渐进演进（二期内部路线图）
 
 无头浏览器的状态（cookie、localStorage、当前页面）挂在"谁持有引用"上，由此自然分出三档实现。每档都是前一档的增量改造，做一档、验证一档、再决定要不要下一档：

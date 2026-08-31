@@ -34,7 +34,7 @@ import { z } from "zod";
 import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
 import type { ChatMessage } from "./types.js";
-import { tavilySearch, formatSearchResults } from "../services/search.js";
+import { webSearch, formatSearchResults } from "../services/search.js";
 import { callModel } from "../services/model.js";
 import { getSystemPrompt } from "../services/prompts/builder.js";
 import { releaseBrowser } from "../services/browse/browser.js";
@@ -117,7 +117,7 @@ async function prefetchUrls(
 
 // Tavily 起点材料。0 结果不算失败——返回引导模型自寻起点的提示（情形 c）。
 async function searchStartMaterial(question: string): Promise<string> {
-  const results = await tavilySearch(question);
+  const results = await webSearch(question);
   if (results.length === 0) {
     return "起点搜索没有结果。可以用 open_page 打开搜索引擎结果页（如 https://www.bing.com/search?q=问题关键词 ）自行寻找起点。";
   }

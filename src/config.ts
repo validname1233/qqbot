@@ -47,6 +47,13 @@ export const config = {
   agentModel: optionalEnv("AGENT_MODEL", optionalEnv("AI_MODEL", "deepseek-v4-pro")),
   // Tavily 联网搜索 API key（必填，Agent 的搜索工具要用）。
   tavilyApiKey: requireEnv("TAVILY_API_KEY"),
+  // 联网搜索 provider（选填）：tavily（默认）| aliyun（OpenSearch 联网搜索）。
+  // 只影响 webSearch() 的内部分发，三个调用方（Agent 工具/news cron/深检）无感知。
+  // 选 aliyun 时下面三个 ALIYUN_SEARCH_* 必填；选 tavily（或不填）时它们可留空。
+  searchProvider: optionalEnv("SEARCH_PROVIDER", "tavily"),
+  aliyunSearchApiKey: optionalEnv("ALIYUN_SEARCH_API_KEY", ""),
+  aliyunSearchHost: optionalEnv("ALIYUN_SEARCH_HOST", ""),
+  aliyunSearchWorkspace: optionalEnv("ALIYUN_SEARCH_WORKSPACE", "default"),
   // 智谱 BigModel 的文本嵌入 API key（长期记忆 RAG 召回用，必填）和模型名（选填，有默认）。
   embeddingApiKey: requireEnv("EMBEDDING_API_KEY"),
   embeddingModel: optionalEnv("EMBEDDING_MODEL", "embedding-3"),
@@ -87,3 +94,22 @@ export const config = {
   browseMaxContentTokens: optionalEnvNumber("BROWSE_MAX_CONTENT_TOKENS", 3000),
   browseMaxLinks: optionalEnvNumber("BROWSE_MAX_LINKS", 30),
 } as const;
+
+// 延迟校验：SEARCH_PROVIDER=aliyun 时阿里三项必填。放在 config 定义之后立即执行，
+// 进程启动就报缺（而不是等第一次搜索请求时才炸）——requireEnv 的语义，按条件手写。
+if (config.searchProvider === "aliyun") {
+  for (const [key, value] of [
+    ["ALIYUN_SEARCH_API_KEY", config.aliyunSearchApiKey],
+    ["ALIYUN_SEARCH_HOST", config.aliyunSearchHost],
+  ] as const) {
+    if (value === "") {
+      throw new Error(
+        `SEARCH_PROVIDER=aliyun 需要配置 ${key}。请复制 .env.example 为 .env 并填写，或把 SEARCH_PROVIDER 改回 tavily。`,
+      );
+    }
+  }
+} else if (config.searchProvider !== "tavily") {
+  throw new Error(
+    `SEARCH_PROVIDER 只能是 tavily 或 aliyun，收到 "${config.searchProvider}"。`,
+  );
+}

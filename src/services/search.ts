@@ -1,14 +1,19 @@
-// services/search.ts —— 调用 Tavily 联网搜索接口。
-// 职责单一：给关键词，返回搜索结果列表。这次只给 Agent 用（用户不能 /命令 直接调），
-// 所以本文件不实现 CommandService，就是个纯函数服务，角色和 ai.ts 的 askAI 一样。
+// services/search.ts —— 联网搜索的统一入口（provider 模式）。
+// 调用方一律用 webSearch()，运行时按 SEARCH_PROVIDER 环境变量分发到具体实现：
+//   tavily（默认，向后兼容）或 aliyun（OpenSearch 联网搜索）。
+// 加新 provider：实现一个签名同 webSearch 的函数，加进 PROVIDERS 分发表即可。
+// 具体请求/解析逻辑收在各 provider 函数里，本文件顶部只管分发与公共类型。
+//
+// 三个调用方（全部经 webSearch，谁都不直接碰具体 provider）：
+//   agent/tools/search.ts   /Agent 的 search 工具（透传 maxResults/searchDepth）
+//   services/news/cron.ts   每日新闻 cron（关键词+日期）
+//   agent/deep-search.ts    深检图 searchNode（调研起点）
+//
+// 调研背景与选型记录：docs/superpowers/specs/2026-08-31-search-provider-research.md
+// （Bing v7 已退役）与 2026-08-31-aliyun-web-search-research.md（阿里接入规范）。
 
 import { config } from "../config.js";
-
-const API_URL = "https://api.tavily.com/search";
-
-// 默认「结果少、搜索浅」：够用又省 Tavily 额度，模型需要更多/更深时可自己传参覆盖。
-export const DEFAULT_MAX_RESULTS = 6;
-export const DEFAULT_SEARCH_DEPTH: "basic" | "advanced" = "basic";
+import { logger } from "./logger.js";
 
 export interface SearchResult {
   title: string;
@@ -16,17 +21,33 @@ export interface SearchResult {
   content: string; // 摘要片段
 }
 
-// 只声明用得到的字段，Tavily 返回里其余字段（score、images 等）忽略。
+export type SearchDepth = "basic" | "advanced";
+
+// provider 实现的统一签名：与 webSearch 完全一致，便于直接进分发表。
+type SearchProvider = (
+  query: string,
+  maxResults: number,
+  searchDepth: SearchDepth,
+) => Promise<SearchResult[]>;
+
+// ---------------- Tavily provider ----------------
+
+const TAVILY_API_URL = "https://api.tavily.com/search";
+
+// 默认「结果少、搜索浅」：够用又省 Tavily 额度，模型需要更多/更深时可自己传参覆盖。
+export const DEFAULT_MAX_RESULTS = 6;
+export const DEFAULT_SEARCH_DEPTH: SearchDepth = "basic";
+
 interface TavilyResponse {
   results?: Array<{ title?: string; url?: string; content?: string }>;
 }
 
-export async function tavilySearch(
+async function tavilySearch(
   query: string,
-  maxResults: number = DEFAULT_MAX_RESULTS,
-  searchDepth: "basic" | "advanced" = DEFAULT_SEARCH_DEPTH,
+  maxResults: number,
+  searchDepth: SearchDepth,
 ): Promise<SearchResult[]> {
-  const response = await fetch(API_URL, {
+  const response = await fetch(TAVILY_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -65,8 +86,91 @@ export async function tavilySearch(
   }));
 }
 
-// 把结果列表整理成一段文本——只给「标题+链接+摘要」，不用 Tavily 自带的 include_answer
-// 总结，让模型/用户自己判断怎么用这些原始结果。
+// ---------------- 阿里云 OpenSearch 联网搜索 provider ----------------
+// 接入规范见调研文档：POST {host}/v3/openapi/workspaces/{ws}/web-search/ops-web-search-001
+// Bearer 认证；query_rewrite 保持默认 true（服务端免费帮忙把口语问题改写成利检索词）；
+// searchDepth 映射 way 档位：basic→pro，advanced→pro-fetch（增强搜索+深度解析）。
+
+interface AliyunSearchResponse {
+  result?: {
+    search_result?: Array<{
+      title?: string;
+      link?: string;
+      snippet?: string;
+    }>;
+  };
+}
+
+// 阿里 QPS 上限 3（主+RAM 子账号合计）：串行链强制相邻调用间隔 ≥350ms，留出安全余量。
+// 个人 bot 的量级（深检一次搜一次、news 低频）几乎不会真正等待，纯保险。
+const ALIYUN_MIN_INTERVAL_MS = 350;
+let aliyunLastCall = 0;
+
+async function aliyunSearch(
+  query: string,
+  maxResults: number,
+  searchDepth: SearchDepth,
+): Promise<SearchResult[]> {
+  // 排队限速：上一个调用还没结束或间隔未满，等齐再发（进程内所有 aliyun 搜索共用一条线）
+  const wait = aliyunLastCall + ALIYUN_MIN_INTERVAL_MS - Date.now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  aliyunLastCall = Date.now();
+
+  const endpoint =
+    `${config.aliyunSearchHost}/v3/openapi/workspaces/${config.aliyunSearchWorkspace}` +
+    `/web-search/ops-web-search-001`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.aliyunSearchApiKey}`,
+    },
+    body: JSON.stringify({
+      query,
+      top_k: maxResults,
+      content_type: "snippet",
+      way: searchDepth === "advanced" ? "pro-fetch" : "pro",
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`阿里联网搜索接口返回 ${response.status}: ${detail}`);
+  }
+
+  const data = (await response.json()) as AliyunSearchResponse;
+  return (data.result?.search_result ?? []).map((r) => ({
+    title: r.title ?? "",
+    url: r.link ?? "",
+    content: r.snippet ?? "",
+  }));
+}
+
+// ---------------- 分发层 ----------------
+
+const PROVIDERS: Record<string, SearchProvider> = {
+  tavily: tavilySearch,
+  aliyun: aliyunSearch,
+};
+
+export async function webSearch(
+  query: string,
+  maxResults: number = DEFAULT_MAX_RESULTS,
+  searchDepth: SearchDepth = DEFAULT_SEARCH_DEPTH,
+): Promise<SearchResult[]> {
+  const provider = PROVIDERS[config.searchProvider];
+  if (provider === undefined) {
+    throw new Error(`未知的 SEARCH_PROVIDER: ${config.searchProvider}（可用：${Object.keys(PROVIDERS).join("/")}）`);
+  }
+  const t0 = Date.now();
+  const results = await provider(query, maxResults, searchDepth);
+  logger.debug("search", `webSearch[${config.searchProvider}] "${query}" → ${results.length} 条 (+${Date.now() - t0}ms)`);
+  return results;
+}
+
+// 把结果列表整理成一段文本——只给「标题+链接+摘要」，不用搜索服务自带的总结，
+// 让模型/用户自己判断怎么用这些原始结果。
 export function formatSearchResults(results: SearchResult[]): string {
   if (results.length === 0) {
     return "没有搜到相关结果。";

@@ -8,7 +8,7 @@
 import cron, { type ScheduledTask } from "node-cron";
 import { callModel } from "../model.js";
 import { pushGroupMessage } from "../../qq/messages.js";
-import { tavilySearch, type SearchResult } from "../search.js";
+import { webSearch, type SearchResult } from "../search.js";
 import { listEnabledSubscriptions, type NewsSubscription } from "./store.js";
 import { getSystemPrompt } from "../prompts/builder.js";
 import { logger } from "../logger.js";
@@ -50,7 +50,7 @@ function formatLinksList(results: SearchResult[]): string {
 // 单独抽出来，registerCron 和 initializeNewsCron 都不用关心具体怎么发。
 async function runNewsPush(sub: NewsSubscription): Promise<void> {
   const dateText = todayDateText();
-  const results = await tavilySearch(`${sub.keyword} ${dateText}`, sub.maxResults);
+  const results = await webSearch(`${sub.keyword} ${dateText}`, sub.maxResults);
 
   if (results.length === 0) {
     await pushGroupMessage(sub.groupOpenid, "今天没搜到相关新闻，本鲸鱼也很无奈～");
