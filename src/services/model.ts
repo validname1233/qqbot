@@ -35,12 +35,15 @@ function truncateContent(content: string | null): string {
 // synthesizeFinalReply 收尾时传 true，让模型多想一步再给最终回复。
 // label：调用方传入的标识（通常是发起调用的节点名，如 "llmCall"/"plainReply"），
 // 纯粹用来在日志里区分"这次调用是谁发起的"，不影响请求内容，不传就打印 "unknown"。
+// signal（选填）：AbortSignal，/stop 中断链路用——拉闸时正在等的 fetch 立刻抛
+// AbortError。AbortError 不是接口故障，调用方 catch 到后应静默收尾而不是当错误处理。
 export async function callModel(
   messages: ChatMessage[],
   tools?: ToolSchema[],
   model: string = config.aiModel,
   enableThinking: boolean = false,
   label = "unknown",
+  signal?: AbortSignal,
 ): Promise<ChatMessage> {
   const t0 = Date.now();
   // 找最后一条 role:"user" 的消息（即这一轮真正的用户输入），日志里打出来方便排查
@@ -53,6 +56,7 @@ export async function callModel(
 
   const response = await fetch(API_URL, {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.aiApiKey}`,
@@ -93,4 +97,10 @@ export async function callModel(
   );
 
   return message;
+}
+
+// AbortError 识别：/stop 拉闸时 fetch 抛的就是它。调用方的 catch 用这个判断
+// "用户主动停"（静默收尾、不打 error 日志）还是"真故障"（正常错误路径）。
+export function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }

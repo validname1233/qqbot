@@ -40,6 +40,8 @@ import { getSystemPrompt } from "../services/prompts/builder.js";
 import { releaseBrowser } from "../services/browse/browser.js";
 import { toolSchemas, runTool } from "./deep-search/registry.js";
 import { loadPage } from "./tools/open-page.js";
+import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
+import { sessionKey } from "../session/key.js";
 import { logger } from "../services/logger.js";
 
 // 深检工具走独立注册表（deep-search/registry.ts），不进 agent/registry.ts 共享注册表
@@ -65,6 +67,9 @@ const DeepSearchState = new StateSchema({
   turnCount: z.number().default(0),
   deadline: z.number().default(0),
   report: z.string().nullable().default(null),
+  // /stop 的中断信号（与 loop.ts 同款）：browseLlm/planNode/synthesize 的模型调用
+  // 带它，条件边查 aborted——拉闸后不再进下一轮，直接收尾。
+  interruptSignal: z.custom<AbortSignal>().nullable().default(null),
 });
 
 type DeepSearchStateT = typeof DeepSearchState.State;
@@ -225,13 +230,26 @@ async function browseLlm(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
     });
   }
 
-  const response = await callModel(
-    messages,
-    toolSchemas(),
-    config.aiModel,
-    false,
-    "browseLlm",
-  );
+  // AbortError 兜底：/stop 拉闸时正在等的模型调用抛 AbortError，若不接住会炸穿
+  // 整个 graph.invoke。接住后返回一个"无 tool_calls 的空响应"，条件边看到
+  // interruptSignal.aborted 自然路由去 synthesize 优雅收尾。
+  let response;
+  try {
+    response = await callModel(
+      messages,
+      toolSchemas(),
+      config.aiModel,
+      false,
+      "browseLlm",
+      state.interruptSignal ?? undefined,
+    );
+  } catch (error) {
+    if (state.interruptSignal?.aborted) {
+      logger.info("agent", "browseLlm 被 /stop 中断，转入收尾");
+      return { messages: [{ role: "assistant", content: "（任务已中断）", tool_calls: undefined }] };
+    }
+    throw error;
+  }
 
   const content = response.content ?? "";
   const stepNote =
@@ -344,7 +362,9 @@ function afterPlan(state: DeepSearchStateT): "browseLlm" | "synthesize" {
 
 // 路由一：browseLlm 之后。无 tool_calls（模型自认材料够了，输出的是材料小结）→ 收尾；
 // 有 tool_calls 但预算耗尽 → 收尾（优雅降级，synthesize 拿部分材料照样能出报告）。
+// /stop 拉闸 → 收尾：与预算耗尽同一条优雅降级路径，synthesze 拿已读材料出部分报告。
 function afterBrowseLlm(state: DeepSearchStateT): "browseTools" | "synthesize" {
+  if (state.interruptSignal?.aborted) return "synthesize";
   const lastMessage = state.messages[state.messages.length - 1];
   const hasToolCalls = lastMessage?.tool_calls !== undefined && lastMessage.tool_calls.length > 0;
   const budgetLeft = state.turnCount < config.browseMaxTurns && Date.now() < state.deadline;
@@ -354,6 +374,7 @@ function afterBrowseLlm(state: DeepSearchStateT): "browseTools" | "synthesize" {
 
 // 路由二：browseTools 之后。还有预算就回 browseLlm 看材料继续决策，没预算直接收尾。
 function afterBrowseTools(state: DeepSearchStateT): "browseLlm" | "synthesize" {
+  if (state.interruptSignal?.aborted) return "synthesize";
   const budgetLeft = state.turnCount < config.browseMaxTurns && Date.now() < state.deadline;
   return budgetLeft ? "browseLlm" : "synthesize";
 }
@@ -379,6 +400,13 @@ export async function runDeepSearch(
   question: string,
   ctx: MessageContext,
 ): Promise<string> {
+  // /stop 中断挂载（拒绝并发语义，与 runAgentTurn 同款）：登记失败 = 该会话已有长流程。
+  const flowKey = sessionKey(ctx.event);
+  const controller = beginControlledFlow(flowKey);
+  if (controller === null) {
+    return "上一个任务还在跑哦～先发 /stop 停掉它，再重新发起吧。";
+  }
+
   const { memoryKey, sqliteMemoryStore } = await importMemory();
   const key = memoryKey(ctx.event);
 
@@ -389,7 +417,15 @@ export async function runDeepSearch(
       question,
       ctx,
       skipMemory: false,
+      interruptSignal: controller.signal,
     });
+
+    // 被 /stop 中断：拿部分材料出个简短的"已中断"说明（比静默更适合深检——
+    // 用户可能想知道停在哪了），不落库（这条不是正式报告）。
+    if (controller.signal.aborted) {
+      return "深度检索已按你的要求中断～已读的材料就先不整理了，需要的话重新发起。";
+    }
+
     const report = result.report ?? "（深度检索没有生成报告）";
 
     await sqliteMemoryStore.append(
@@ -400,6 +436,7 @@ export async function runDeepSearch(
     );
     return report;
   } finally {
+    endControlledFlow(flowKey, controller);
     // A 档生命周期落点：无论成败，图跑完就关浏览器
     await releaseBrowser();
   }
@@ -431,6 +468,8 @@ export async function runDeepSearchLocally(question: string): Promise<string> {
     event: mockEvent,
   };
 
+  // 本地测试不挂中断注册表（不占用会话锁，/stop 也管不到测试进程），
+  // signal 传 null：图内各节点对 null 容忍（可选链 + 默认不中断）。
   try {
     const result = await deepSearchGraph.invoke({
       messages: [],
@@ -438,6 +477,7 @@ export async function runDeepSearchLocally(question: string): Promise<string> {
       question,
       ctx,
       skipMemory: true,
+      interruptSignal: null,
     });
     return result.report ?? "（深度检索没有生成报告）";
   } finally {

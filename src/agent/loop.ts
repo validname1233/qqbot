@@ -28,6 +28,8 @@ import { logger } from "../services/logger.js";
 import { getSystemPrompt } from "../services/prompts/builder.js";
 import { runTool, toolSchemas } from "./registry.js";
 import { sqliteMemoryStore } from "./memory/sqlite.js";
+import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
+import { sessionKey } from "../session/key.js";
 import type { ChatMessage } from "./types.js";
 
 // llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务。
@@ -57,6 +59,9 @@ const AgentState = new StateSchema({
   reply: z.string().nullable().default(null),
   longTermContext: z.string().default(""),
   imageIds: z.custom<number[]>().default([]),
+  // /stop 的中断信号：runAgentTurn 挂进 state，llmCall 的模型调用带它
+  // （拉闸时正在等的 fetch 立刻抛 AbortError，当前轮当场结束）。
+  interruptSignal: z.custom<AbortSignal>().nullable().default(null),
 });
 
 type AgentStateT = typeof AgentState.State;
@@ -182,8 +187,16 @@ ${toolResultsText}
 
 // 节点一：带 tools 调模型。只负责判断"需不需要工具"，无论结果如何都把 response 原样返回，
 // 交给条件边路由：有 tool_calls → tools 节点；没有 tool_calls → plainReply 节点。
+// fetch 带 interruptSignal：/stop 拉闸时正在等的模型调用立刻抛 AbortError 中断。
 async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
-  const response = await callModel(state.messages, toolSchemas(), undefined, undefined, "llmCall");
+  const response = await callModel(
+    state.messages,
+    toolSchemas(),
+    undefined,
+    undefined,
+    "llmCall",
+    state.interruptSignal ?? undefined,
+  );
 
   return {
     messages: [
@@ -289,41 +302,60 @@ export async function runAgentTurn(
   ctx: MessageContext,
   imageIds: number[] = [],
 ): Promise<string> {
-  const key = memoryKey(ctx.event);
-  const history = await sqliteMemoryStore.get(key);
+  // /stop 中断挂载（拒绝并发语义）：登记失败 = 该会话已有长流程在跑，直接拒绝。
+  const flowKey = sessionKey(ctx.event);
+  const controller = beginControlledFlow(flowKey);
+  if (controller === null) {
+    return "上一个任务还在跑哦～先发 /stop 停掉它，再重新发起吧。";
+  }
 
-  // messages 初始值留空：prepareContext 节点是图的新起点，负责把
-  // [AGENT_SYSTEM_PROMPT, ...history, 格式化后的 userMessage] 拼好写进 messages。
-  const result = await agentGraph.invoke({
-    messages: [],
-    ctx,
-    userText,
-    history,
-    imageIds,
-  });
+  try {
+    const key = memoryKey(ctx.event);
+    const history = await sqliteMemoryStore.get(key);
 
-  const reply = result.reply ?? "（Agent 没有返回内容）";
+    // messages 初始值留空：prepareContext 节点是图的新起点，负责把
+    // [AGENT_SYSTEM_PROMPT, ...history, 格式化后的 userMessage] 拼好写进 messages。
+    // interruptSignal 进 state，供 llmCall 的模型调用和条件边感知 /stop。
+    const result = await agentGraph.invoke({
+      messages: [],
+      ctx,
+      userText,
+      history,
+      imageIds,
+      interruptSignal: controller.signal,
+    });
 
-  // messages 里 [0] 是 system prompt，[1..history.length] 是历史，
-  // 从 userMessage 开始往后的都是这一轮新增的——直接切片存进短期记忆。
-  // 注意存的是"占位符版"（prepareContext 展开前的原始消息）：messages 里的
-  // history 是展开版，但这一轮新增的切片（userMessage 及之后）来自初始构造，
-  // prepareContext 返回的 userMessage 已是展开版——所以这里要用占位符版重拼，
-  // 保证库里存的是引用（懒加载语义：描述不落库，下次读取再展开/复用缓存）。
-  // 传入 author 信息：从事件中提取发言人的 openid 和昵称。
-  const event = ctx.event;
-  const rawUserText = buildTextWithPlaceholders(userText, imageIds);
-  const storedUserMessage: ChatMessage = {
-    role: "user",
-    content: formatSpeakerContent(rawUserText, event.authorName, event),
-  };
-  const newMessages = result.messages.slice(1 + history.length);
-  await sqliteMemoryStore.append(
-    key,
-    { openid: event.authorOpenid, name: event.authorName },
-    storedUserMessage,
-    ...newMessages.slice(1),
-  );
+    // 被 /stop 中断的标志：reply 为空且 signal 已拉闸。正常完成 reply 一定非空
+    // （plainReply/finalize 都会产出），不需要再给用户发"任务失败"——/stop 已确认过。
+    if (controller.signal.aborted) {
+      return "";
+    }
 
-  return reply;
+    const reply = result.reply ?? "（Agent 没有返回内容）";
+
+    // messages 里 [0] 是 system prompt，[1..history.length] 是历史，
+    // 从 userMessage 开始往后的都是这一轮新增的——直接切片存进短期记忆。
+    // 注意存的是"占位符版"（prepareContext 展开前的原始消息）：messages 里的
+    // history 是展开版，但这一轮新增的切片（userMessage 及之后）来自初始构造，
+    // prepareContext 返回的 userMessage 已是展开版——所以这里要用占位符版重拼，
+    // 保证库里存的是引用（懒加载语义：描述不落库，下次读取再展开/复用缓存）。
+    // 传入 author 信息：从事件中提取发言人的 openid 和昵称。
+    const event = ctx.event;
+    const rawUserText = buildTextWithPlaceholders(userText, imageIds);
+    const storedUserMessage: ChatMessage = {
+      role: "user",
+      content: formatSpeakerContent(rawUserText, event.authorName, event),
+    };
+    const newMessages = result.messages.slice(1 + history.length);
+    await sqliteMemoryStore.append(
+      key,
+      { openid: event.authorOpenid, name: event.authorName },
+      storedUserMessage,
+      ...newMessages.slice(1),
+    );
+
+    return reply;
+  } finally {
+    endControlledFlow(flowKey, controller);
+  }
 }
