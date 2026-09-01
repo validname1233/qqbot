@@ -423,7 +423,7 @@ export async function runDeepSearch(
     // 被 /stop 中断：拿部分材料出个简短的"已中断"说明（比静默更适合深检——
     // 用户可能想知道停在哪了），不落库（这条不是正式报告）。
     if (controller.signal.aborted) {
-      return "深度检索已按你的要求中断～已读的材料就先不整理了，需要的话重新发起。";
+      return "";
     }
 
     const report = result.report ?? "（深度检索没有生成报告）";
