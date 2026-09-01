@@ -14,7 +14,7 @@ export const stopService: CommandService = {
     if (aborted) {
       // 拉闸成功 ≠ 流程已完全停下（abort 异步生效，被中断流程的收尾还要跑一会，
       // 但它识别 AbortError 后不会再发误导性的失败消息），这里立刻给用户确认。
-      return "好嘞，已经叫停了～那个任务的剩余动作不会再推进。";
+      return "---流程已终止---";
     }
     return "现在没有在跑的任务哦～（/Agent 和 /深度检索 运行时才能用 /stop 打断）";
   },
