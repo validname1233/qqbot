@@ -42,6 +42,18 @@ export const openPageTool: Tool = {
   run: (args: Record<string, unknown>, ctx: MessageContext) => runOpenPage(args, ctx.event),
 };
 
+// 同一工具的日常 Agent 版本：浅拷贝改 description（fetch_tool 方案 §2.1——
+// 日常语境没有 interact_page 兜底（深检专属），要突出"用户给了网址就打开"；
+// 双注册表各持一份描述，run 逻辑单一维护）。
+export const agentOpenPageTool: Tool = {
+  ...openPageTool,
+  description:
+    "打开一个网页并阅读其内容。当用户消息里包含网址（http(s)://...），" +
+    "或明确让你查看/打开某个网页、链接时调用。返回页面标题、正文摘要和页面内的链接列表" +
+    "（带编号，跟进页面内的链接时可再次调用并传 link 编号）。" +
+    "注意：这不是搜索工具——需要查找信息来源时用 search，已经拿到具体网址时用本工具。",
+};
+
 // "抓取 → 提取 → 入池 → 格式化"管线：open_page 工具与深检图 searchNode 的 URL
 // 预读共用——入口节点把用户消息里的网址直接读成页面材料，不经模型转手（消灭
 // "模型逐字抄写用户 URL"这个最后的幻觉/丢字风险点，总设计 §3.2：无判断的步骤

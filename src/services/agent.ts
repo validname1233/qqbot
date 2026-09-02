@@ -11,12 +11,17 @@ import { searchTool } from "../agent/tools/search.js";
 import { addMemoryTool } from "../agent/tools/add-memory.js";
 import { deleteMemoryTool } from "../agent/tools/delete-memory.js";
 import { clearAllMemoriesTool } from "../agent/tools/clear-all-memories.js";
+import { agentOpenPageTool } from "../agent/tools/open-page.js";
 
 registerTool(setReminderTool);
 registerTool(searchTool);
 registerTool(addMemoryTool);
 registerTool(deleteMemoryTool);
 registerTool(clearAllMemoriesTool);
+// fetch_tool：用户直接给 URL 时打开阅读（复用深检的 open_page 能力层，fetch_tool
+// 方案见 docs/features/2026-09-02-fetch-tool实现方案.md）。日常版 description 无
+// interact_page 引用；深检注册表另持原版，同一 run 逻辑单一维护。
+registerTool(agentOpenPageTool);
 
 export const agentService: CommandService = {
   name: "Agent",
