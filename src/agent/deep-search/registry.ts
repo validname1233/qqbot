@@ -12,6 +12,7 @@ import type { Tool } from "../tool.js";
 import type { ToolSchema } from "../types.js";
 import { openPageTool } from "../tools/open-page.js";
 import { interactPageTool } from "../tools/interact-page.js";
+import { searchTool } from "../tools/search.js";
 
 const tools = new Map<string, Tool>();
 
@@ -47,3 +48,7 @@ export async function runTool(
 
 registerTool(openPageTool);
 registerTool(interactPageTool);
+// search 也进深检表：planNode 自寻起点（无 URL 入口）要用——起点检索由确定性
+// 代码移交给模型判断（用户方案：planNode 带三工具，自行决定搜什么、搜几次）。
+// searchTool 同时注册在全局表（/Agent 用），双表共用同一对象，零额外维护。
+registerTool(searchTool);

@@ -2,29 +2,29 @@
 // 与日常 Agent 图（loop.ts）的关系：完全独立、零共享状态——loop.ts 一行不改，
 // 日常 /Agent 行为不变；两张图各自有循环预算、提示词场景和记忆策略。
 //
-// 图结构（五节点 + 三条条件边，plan & execute）：
-//   searchNode → planNode → (browseLlm ⇄ browseTools)* → synthesize → END
+// 图结构（修订四：searchNode 单节点版，单行道）：
+//   preflightNode → [有URL] planNode → browseLlm ⇄ browseTools → synthesize → END
+//                  → [无URL] searchNode → planNode → ...
 //
-//   searchNode   起点装配（确定性，无模型参与）。用户消息里的 URL 正则提取（≤5 个）后
-//                逐个预读成页面材料——不经模型转手，消灭"模型抄写 URL"的幻觉/丢字
-//                风险；没有 URL 或全部 URL 预读失败时走 Tavily 起点检索。设墙钟 deadline。
-//   planNode     制定调研计划（flash，deep_plan 纯功能场景，不带 tools）——看过起点
-//                材料再定方向，写入思维链 chain[0]。三期登录检测的挂点（届时给它
-//                工具表）。预算耗尽则跳过模型调用直接收尾。
-//   browseLlm    思维链注入提示词末尾后带 [open_page, interact_page] 调模型（flash：
-//                导航判断是轻任务且要调很多次）。模型 content（本步复盘+下一步指示，
-//                即思维链下一环）追加进 chain；无 tool_calls（Claude Code 式自然退出）
-//                → synthesize，有 → browseTools。
-//   browseTools  并发执行 tool_calls（open_page 可真并发，同域串行由 fetch 层队列保证；
-//                interact_page 经 browser.ts 的链自动串行），结果拼回 messages。
-//   synthesize   汇总成报告（pro 模型 + thinking，deep_report 场景带人设）；
-//                user 消息含问题 + 起点材料 + 思维链 + 浏览记录。
+//   preflightNode 纯代码分流：提取 URL（≤5 个）并行预读成页面材料；无 URL 则
+//                 设 hasStartUrls=false 交给条件边路由去 searchNode。设墙钟 deadline。
+//   searchNode    检索词改写 + 单次搜索（flash 只看 search 一个工具 schema）：
+//                 模型输出改写后的检索词 tool_calls（可并行 2~3 个）→ 代码并发执行
+//                 webSearch → 结果拼进 startMaterial。一次结束不回环（修订三的
+//                 planTools 自寻循环被否决：不要"搜完回计划再看要不要搜"）。
+//   planNode      制定计划（flash，deep_plan 场景，无工具）：看过起点材料
+//                 （预读页面或搜索结果）输出纯文本计划，写 chain[0]。
+//   browseLlm     浏览决策（deep_browse 场景，三工具含 search——起点搜索失败时
+//                 浏览阶段仍可自救补搜）：思维链注入 + 多轮深挖。
+//   browseTools   执行浏览工具。turnCount 只统计浏览圈（searchNode 不耗轮次）。
+//   synthesize    汇总报告（pro + thinking，deep_report 场景）。
 //
-// 思维链（chain，plan & execute 的记忆体）：planNode 写计划，browseLlm 每轮追加本步
-// 复盘——「一次调用双职责」（content 承载 Thought，tool_calls 是 Action），content 为
-// null 时从 tool_calls 合成最小条目兜底（DeepSeek 带 tool_calls 时 content 常为 null，
-// 提示词压不死）。只在 browseLlm 注入和 synthesize 拼报告时读取，刻意不进
-// state.messages（理由见 browseLlm 的注释）。
+// 修订轨迹：修订三（planTools 带三工具自寻起点循环）实测后否决——搜索过程不可
+// 控且耗浏览轮次；修订四把"改写"与"搜索"合并进专职 searchNode，一次结束。
+//
+// 思维链（chain，plan & execute 的记忆体）：planNode 写计划，browseLlm 每轮追加
+// 本步复盘。content 为 null 时从 tool_calls 合成最小条目兜底。只在 browseLlm 注入
+// 和 synthesize 拼报告时读取，刻意不进 state.messages。
 //
 // A 档浏览器生命周期：runDeepSearch 用 try/finally 包住图调用，finally 里
 // releaseBrowser()——一次深检请求一套浏览器，请求结束状态归零（总设计 §5.6）。
@@ -33,13 +33,14 @@ import { StateGraph, StateSchema, ReducedValue, START, END } from "@langchain/la
 import { z } from "zod";
 import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
-import type { ChatMessage } from "./types.js";
+import type { ChatMessage, ToolSchema } from "./types.js";
 import { webSearch, formatSearchResults } from "../services/search.js";
 import { callModel } from "../services/model.js";
 import { getSystemPrompt } from "../services/prompts/builder.js";
 import { releaseBrowser } from "../services/browse/browser.js";
 import { toolSchemas, runTool } from "./deep-search/registry.js";
 import { loadPage } from "./tools/open-page.js";
+import { searchTool } from "./tools/search.js";
 import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
 import { sessionKey } from "../session/key.js";
 import { logger } from "../services/logger.js";
@@ -61,6 +62,13 @@ const DeepSearchState = new StateSchema({
   }),
   question: z.string(),
   ctx: z.custom<MessageContext>(),
+  // preflightNode 装配的起点材料（URL 预读结果或空）。单独存字段而不是直接拼进
+  // messages：planNode/browseLlm/synthesize 各自按需引用它，图内消息通道保持
+  // "对话记录"的纯语义（preflight 的材料是环境输入，不是对话的一部分）。
+  startMaterial: z.string().default(""),
+  // preflight 分流标记：true = 用户给了 URL 且已预读，跳过 searchNode 直接进
+  // planNode；false = 无 URL，先过 searchNode（flash 改写 + 单次搜索）。
+  hasStartUrls: z.boolean().default(false),
   // 本地测试用的开关：true 时跳过短期记忆落库（runDeepSearchLocally 设，
   // 防止测试污染生产 memory.sqlite）。
   skipMemory: z.boolean().default(false),
@@ -75,14 +83,10 @@ const DeepSearchState = new StateSchema({
 type DeepSearchStateT = typeof DeepSearchState.State;
 type DeepSearchUpdateT = typeof DeepSearchState.Update;
 
-// 节点一：起点装配。纯确定性，无模型参与。三种入口情形：
-//   a) 用户消息里带 URL（正则提取，最多 MAX_START_URLS 个）→ 逐个预读成页面材料
-//      （不经模型转手，消灭"模型抄写用户 URL"的幻觉/丢字风险）。
-//      部分失败：失败的注记进材料（"以下网址无法访问：…"），成功的照常用；
-//      全部失败：退化成 Tavily 兜底，并明确告诉模型"提供的网址访问失败"。
-//   b) 没有 URL → Tavily 起点检索（top-6 标题+摘要+链接）。
-//   c) Tavily 也没结果 → 提示模型可用 open_page 打开搜索引擎结果页自寻起点。
-// 墙钟 deadline 在本节点开头设定：预读和搜索都计入预算。
+// 节点零：preflight 分流（修订三，纯代码无模型）。有 URL → 并行预读成起点材料
+// （不经模型转手，消灭"模型抄写 URL"的幻觉/丢字风险）；无 URL → 材料留空，
+// 由 planNode 带三工具自寻起点。旧版的"Tavily 兜底/起点检索"整体移除——
+// 起点检索移交 planTools（修订三的核心变更）。设墙钟 deadline（预读计入预算）。
 const MAX_START_URLS = 5;
 
 // 从用户消息里提取 http(s) URL。不用 \S+ 一把抓：中文标点（，。！？）和右括号
@@ -120,96 +124,147 @@ async function prefetchUrls(
   return { pages, failures };
 }
 
-// Tavily 起点材料。0 结果不算失败——返回引导模型自寻起点的提示（情形 c）。
-async function searchStartMaterial(question: string): Promise<string> {
-  const results = await webSearch(question);
-  if (results.length === 0) {
-    return "起点搜索没有结果。可以用 open_page 打开搜索引擎结果页（如 https://www.bing.com/search?q=问题关键词 ）自行寻找起点。";
-  }
-  return `以下是搜索得到的起点材料（标题+摘要+链接）：\n${formatSearchResults(results)}`;
-}
-
-async function searchNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
+async function preflightNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   const deadline = Date.now() + config.browseTotalBudgetMs;
   const question = state.question.trim();
   const { urls, cleaned } = extractStartUrls(question);
 
   const parts: string[] = [];
-  let tavilyFallback: string | null = null;
-
+  let hasStartUrls = false;
   if (urls.length > 0) {
+    hasStartUrls = true;
     const { pages, failures } = await prefetchUrls(urls, state.ctx.event);
     if (pages.length > 0) {
       parts.push(`用户提供了起点网址，已直接读取页面内容如下：\n\n${pages.join("\n\n")}`);
     }
     if (failures.length > 0) {
-      // 全败才跑 Tavily 兜底：部分成功时材料就是用户指的东西，再搜索只添噪音；
-      // 模型真需要补充可以自己 open_page 搜索引擎。
-      if (pages.length === 0) {
-        try {
-          tavilyFallback = await searchStartMaterial(cleaned !== "" ? cleaned : urls[0]);
-          parts.push(`用户提供的网址访问失败，以下是搜索得到的起点材料：\n${tavilyFallback}`);
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          logger.warn("browse", `Tavily 兜底搜索失败: ${reason}`);
-          parts.push("起点搜索失败（用户提供的网址也无法访问）。可以用 open_page 打开搜索引擎结果页（如 https://www.bing.com/search?q=问题关键词 ）自行寻找起点。");
-        }
-      } else {
-        parts.push(`以下网址无法访问，请勿再尝试打开：\n${failures.join("\n")}`);
-      }
+      // 只注记失败：模型需要补充可以自己在浏览阶段 open_page/search（工具在浏览圈有）。
+      parts.push(`以下网址无法访问，请勿再尝试打开：\n${failures.join("\n")}`);
     }
-  } else {
-    parts.push(await searchStartMaterial(question));
   }
+  // 无 URL 不在此处理——条件边路由去 searchNode（flash 改写检索词 + 单次搜索）。
 
-  // user 消息只放数据（问题+起点材料），不放指令——"开始调研"的指令在 deep_browse
-  // 系统提示词里本来就有。保持纯数据的原因：这条消息会被 planNode 原样重发
-  // （换 deep_plan 信封），也会被 synthesize 引用为"起点材料"，混进指令对两个
-  // 消费者都是噪声。
-  const initialMessages: ChatMessage[] = [
-    { role: "system", content: getSystemPrompt(state.ctx.event, "deep_browse") },
-    {
-      role: "user",
-      content: `用户的调研问题是：${cleaned !== "" ? cleaned : question}\n\n${parts.join("\n\n")}`,
-    },
-  ];
-
-  return { messages: initialMessages, deadline };
+  // 问题本体（去掉 URL 后的文字）单独存：各节点引用 startMaterial 时都能拿到。
+  return {
+    startMaterial: `用户的调研问题是：${cleaned !== "" ? cleaned : question}${parts.length > 0 ? `\n\n${parts.join("\n\n")}` : ""}`,
+    hasStartUrls,
+    deadline,
+  };
 }
 
-// 节点二：制定计划（plan & execute 的 plan 半边，总设计 §5.2 修订二）。输入 =
-// searchNode 拼好的问题 + 起点材料（system 换 deep_plan 场景），调 flash、不带
-// tools——计划是纯文本方向而非动作；三期 login 工具就位后才给它工具表。
-// 输出写入 chain[0]，不追加进 messages——浏览循环经思维链注入读它，两条通道
-// 只会重复。放在 searchNode 之后（先见材料再定计划）：URL 预读的红利在这里
-// 变现——登录墙、付费墙、空壳 SPA 在计划阶段就能被看见，对策直接写进计划。
-// 不计入 turnCount（它不是浏览轮次，墙钟预算已覆盖它的耗时）。
+// searchNode 用的单工具 schema：只给模型看 search（从全局注册的 searchTool 取，
+// 不走深检表——这个节点模型只该改写检索词，看见 open_page 反而可能跳过搜索）。
+const SEARCH_ONLY_SCHEMA: ToolSchema[] = [{
+  type: "function",
+  function: {
+    name: searchTool.name,
+    description: searchTool.description,
+    parameters: searchTool.parameters,
+  },
+}];
+
+// 节点一：searchNode——检索词改写 + 单次搜索（修订四，一次结束不回环）。
+// 流程：flash 只看 search schema → 输出 tool_calls（改写后的检索词，可能并行
+// 2~3 个）→ 【代码】并发执行 webSearch → 结果拼进 startMaterial。与修订三
+// （planTools 自寻起点循环）的关键差异：模型只策划检索词，不判断"够不够"、
+// 不回流——搜完即走。轮次不消耗（turnCount 只统计浏览圈），墙钟已覆盖。
+// 兜底链：模型没输出 tool_calls / 参数解析失败 → 拿原始问题直接搜一次；
+// 全部搜索失败 → 材料注明"起点搜索失败"，planNode 拿着问题照样定计划，
+// 浏览圈还有 search 工具可自救。
+async function searchNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
+  // 预算耗尽的极端情况：空过（planNode 对空材料也有兜底）
+  if (Date.now() >= state.deadline) {
+    return {};
+  }
+
+  const question = state.question.trim();
+
+  // 第一步：flash 改写。AbortError 兜底与 browseLlm 同款（拉闸转收尾）。
+  let response;
+  try {
+    response = await callModel(
+      [
+        { role: "system", content: getSystemPrompt(state.ctx.event, "deep_research") },
+        { role: "user", content: question },
+      ],
+      SEARCH_ONLY_SCHEMA,
+      config.aiModel,
+      false,
+      "searchNode",
+      state.interruptSignal ?? undefined,
+    );
+  } catch (error) {
+    if (state.interruptSignal?.aborted) {
+      logger.info("agent", "searchNode 被 /stop 中断，转入收尾");
+      return {};
+    }
+    throw error;
+  }
+
+  // 第二步：从 tool_calls 提取检索词（模型可能并行给多个；不给就退回原问题）。
+  const queries: string[] = [];
+  for (const call of response.tool_calls ?? []) {
+    if (call.function.name !== "search") continue;
+    try {
+      const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+      if (typeof args.query === "string" && args.query.trim() !== "") {
+        queries.push(args.query.trim());
+      }
+    } catch {
+      // 单个参数解析失败跳过，不影响其它检索词
+    }
+  }
+  if (queries.length === 0) {
+    queries.push(question);
+    logger.debug("agent", `searchNode 模型未输出检索词，退回原问题直搜`);
+  }
+  logger.debug("agent", `searchNode 检索词改写: ${queries.join(" | ")}`);
+
+  // 第三步：并发执行（allSettled——部分失败是常态，网络抖动不该全灭）。
+  const settled = await Promise.allSettled(queries.map((q) => webSearch(q)));
+  const blocks: string[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    if (outcome.status === "fulfilled" && outcome.value.length > 0) {
+      blocks.push(formatSearchResults(outcome.value));
+    } else if (outcome.status === "rejected") {
+      const reason = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+      logger.warn("search", `searchNode 起点检索失败 "${queries[i]}": ${reason.slice(0, 150)}`);
+    }
+  }
+
+  const searchPart = blocks.length > 0
+    ? `\n\n以下是起点搜索得到的材料（标题+摘要+链接）：\n${blocks.join("\n\n")}`
+    : "\n\n（起点搜索没有结果。可以在浏览阶段用 search 工具换个检索词重试，或用 open_page 打开搜索引擎结果页如 https://www.bing.com/search?q=问题关键词 ）";
+
+  return { startMaterial: `${state.startMaterial}${searchPart}` };
+}
+
+// 节点二：planNode——制定计划（无工具，纯文本方向）。
+// 输入 = startMaterial（URL 预读页面 或 searchNode 的搜索结果），输出写 chain[0]。
+// 不计入 turnCount（不是浏览轮次，墙钟预算覆盖耗时）。检索已由 searchNode 完成，
+// 这里只做"看过材料定方向"。
 async function planNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
-  // 预算已耗尽（预读/起点检索吃光预算的极端情况）：跳过模型调用，交给条件边直接收尾
+  // 预算已耗尽（预读/起点搜索吃光预算的极端情况）：跳过模型调用，交给条件边直接收尾
   if (Date.now() >= state.deadline) {
     return { chain: [] };
   }
 
-  // messages 结构：[system: deep_browse, user: 问题+起点材料]——计划环节只需要
-  // 这条 user 消息，deep_browse 的浏览纪律对计划是噪声，换成 deep_plan 场景重发。
-  const startMessage = state.messages.find((msg) => msg.role === "user");
-
   const plan = await callModel(
     [
       { role: "system", content: getSystemPrompt(state.ctx.event, "deep_plan") },
-      startMessage ?? { role: "user", content: state.question },
+      { role: "user", content: state.startMaterial },
     ],
     undefined,
     config.aiModel,
     false,
     "planNode",
+    state.interruptSignal ?? undefined,
   );
 
   const planText = plan.content ?? "（计划生成为空，直接开始浏览）";
   // 链全文打 debug：计划是 chain[0]，浏览每步的思维链都有对应日志，排查
-  // 导航行为时可以完整复盘模型的思考轨迹。多行 content 原样输出不截断——
-  // 截断的思考链没有排查价值（vision.ts 的 150 字截断是给"看一眼"用的，
-  // 这里是给"逐环分析"用的，口径不同）。
+  // 导航行为时可以完整复盘模型的思考轨迹。多行 content 原样输出不截断。
   logger.debug("agent", `思维链[0/计划]: ${planText}`);
   return { chain: [planText] };
 }
@@ -222,7 +277,14 @@ async function planNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
 // content 为 null 时从 tool_calls 合成最小条目兜底——DeepSeek 带 tool_calls 时
 // content 常为 null（提示词压不死），链永不间断。
 async function browseLlm(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
-  const messages = [...state.messages];
+  // messages 通道在修订三后的语义：preflight 不再写 messages，第一条 user 消息
+  // 由这里补（system: deep_browse + user: startMaterial），之后是 planTools 轮次
+  // 留下的 assistant/tool 记录——浏览决策能看见计划阶段做过什么搜索。
+  const messages: ChatMessage[] = [
+    { role: "system", content: getSystemPrompt(state.ctx.event, "deep_browse") },
+    { role: "user", content: state.startMaterial },
+    ...state.messages,
+  ];
   if (state.chain.length > 0) {
     messages.push({
       role: "system",
@@ -317,10 +379,9 @@ async function browseTools(state: DeepSearchStateT): Promise<DeepSearchUpdateT> 
 // system 放 deep_report 人设，user 只放动态内容（问题+起点+思维链+浏览记录）。
 // 浏览记录给证据，思维链给意图脉络，报告模型两者都有。
 async function synthesize(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
-  // 浏览记录：messages 里 user 之后的内容（起点消息之后的所有 assistant/tool 消息）
-  const startIdx = state.messages.findIndex((msg) => msg.role === "user");
+  // 浏览记录：messages 全量（planTools/browseLlm 留下的 assistant/tool 消息，
+  // 含计划阶段的自寻起点轮次——它们也是调研过程的一部分）。
   const browseLog = state.messages
-    .slice(startIdx + 1)
     .map((msg) => {
       if (msg.role === "assistant") {
         return msg.tool_calls !== undefined
@@ -330,7 +391,6 @@ async function synthesize(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
       return `页面内容/工具结果：${msg.content ?? ""}`;
     })
     .join("\n\n");
-  const startMaterial = state.messages[startIdx]?.content ?? "";
   const chainText =
     state.chain.length > 0 ? renderChainItems(state.chain) : "（没有生成计划）";
   // 思维链的规模日志：链断了/没累计（ReducedValue 出问题）在这里一眼可见。
@@ -341,7 +401,7 @@ async function synthesize(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
       { role: "system", content: getSystemPrompt(state.ctx.event, "deep_report") },
       {
         role: "user",
-        content: `用户的调研问题是：${state.question}\n\n调研起点材料：\n${startMaterial}\n\n调研计划与逐步进展（思维链）：\n${chainText}\n\n调研过程中的浏览记录：\n${browseLog || "（没有浏览记录）"}\n\n请基于以上材料撰写最终调研报告。`,
+        content: `用户的调研问题是：${state.question}\n\n调研起点材料：\n${state.startMaterial}\n\n调研计划与逐步进展（思维链）：\n${chainText}\n\n调研过程中的浏览记录：\n${browseLog || "（没有浏览记录）"}\n\n请基于以上材料撰写最终调研报告。`,
       },
     ],
     undefined,
@@ -354,15 +414,22 @@ async function synthesize(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   return { messages: [{ role: "assistant", content: report }], report };
 }
 
-// 路由零：planNode 之后。还有预算就开始浏览；预算已耗尽（预读/起点检索吃光预算的
-// 极端情况，planNode 已跳过模型调用）直接收尾。
+// 路由零：preflightNode 之后。有 URL（已预读）直接进 planNode；
+// 无 URL 先过 searchNode（flash 改写 + 单次搜索）再进 planNode。
+function afterPreflight(state: DeepSearchStateT): "searchNode" | "planNode" {
+  return state.hasStartUrls ? "planNode" : "searchNode";
+}
+
+// 路由零.五：planNode 之后。还有预算就开始浏览；预算已耗尽（预读/起点搜索吃光
+// 预算的极端情况，planNode 已跳过模型调用）直接收尾。
 function afterPlan(state: DeepSearchStateT): "browseLlm" | "synthesize" {
+  if (state.interruptSignal?.aborted) return "synthesize";
   return Date.now() < state.deadline ? "browseLlm" : "synthesize";
 }
 
 // 路由一：browseLlm 之后。无 tool_calls（模型自认材料够了，输出的是材料小结）→ 收尾；
 // 有 tool_calls 但预算耗尽 → 收尾（优雅降级，synthesize 拿部分材料照样能出报告）。
-// /stop 拉闸 → 收尾：与预算耗尽同一条优雅降级路径，synthesze 拿已读材料出部分报告。
+// /stop 拉闸 → 收尾：与预算耗尽同一条优雅降级路径，synthesize 拿已读材料出部分报告。
 function afterBrowseLlm(state: DeepSearchStateT): "browseTools" | "synthesize" {
   if (state.interruptSignal?.aborted) return "synthesize";
   const lastMessage = state.messages[state.messages.length - 1];
@@ -380,12 +447,14 @@ function afterBrowseTools(state: DeepSearchStateT): "browseLlm" | "synthesize" {
 }
 
 const deepSearchGraph = new StateGraph(DeepSearchState)
+  .addNode("preflightNode", preflightNode)
   .addNode("searchNode", searchNode)
   .addNode("planNode", planNode)
   .addNode("browseLlm", browseLlm)
   .addNode("browseTools", browseTools)
   .addNode("synthesize", synthesize)
-  .addEdge(START, "searchNode")
+  .addEdge(START, "preflightNode")
+  .addConditionalEdges("preflightNode", afterPreflight, ["searchNode", "planNode"])
   .addEdge("searchNode", "planNode")
   .addConditionalEdges("planNode", afterPlan, ["browseLlm", "synthesize"])
   .addConditionalEdges("browseLlm", afterBrowseLlm, ["browseTools", "synthesize"])
@@ -414,6 +483,8 @@ export async function runDeepSearch(
     const result = await deepSearchGraph.invoke({
       messages: [],
       chain: [],
+      startMaterial: "",
+      hasStartUrls: false,
       question,
       ctx,
       skipMemory: false,
@@ -474,6 +545,8 @@ export async function runDeepSearchLocally(question: string): Promise<string> {
     const result = await deepSearchGraph.invoke({
       messages: [],
       chain: [],
+      startMaterial: "",
+      hasStartUrls: false,
       question,
       ctx,
       skipMemory: true,

@@ -12,14 +12,16 @@ const personalityCache = new Map<string, string>();
 // agent_judge（工具判断）是典型——这次调用只关心 tool_calls 的准确输出，
 // 它的文字内容不会被用户看到（plainReply/finalize 会换人设重新生成），
 // 人设文本对判断是纯噪声，还会让"按群自定义人格"间接改变工具判断行为。
+// deep_plan（深检计划制定）同理——计划只进思维链，人设是噪声。
 // deep_browse（深检浏览决策）同理——它输出的材料小结只留在浏览记录里供
 // synthesize 参考，不直接展示给用户。
-// deep_plan（深检计划制定）同理——计划只进思维链，人设是噪声。
+// deep_research（深检索词改写）同理——输出的是 tool_calls 检索词。
 // 以后若新增类似"只做结构化判断"的场景，往这个集合里加一项即可。
 const PURE_FUNCTIONAL_SCENES: ReadonlySet<PromptScene> = new Set<PromptScene>([
   "agent_judge",
   "deep_plan",
   "deep_browse",
+  "deep_research",
 ]);
 
 // 获取完整系统提示词：人格（自定义或默认）+ 功能规则（按场景）。

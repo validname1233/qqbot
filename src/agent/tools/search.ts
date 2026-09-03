@@ -44,7 +44,17 @@ export const searchTool: Tool = {
     const searchDepth =
       args.search_depth === "advanced" ? "advanced" : DEFAULT_SEARCH_DEPTH;
 
-    const results = await webSearch(query, maxResults, searchDepth);
+    // 兜底：搜索异常转成给模型的文字而不是抛出——search 现在同时挂在深检注册表
+    // （planTools 自寻起点用），深检的 runTool 不做"工具执行失败"统一兜底
+    // （细粒度文案才可自愈），异常漏出去会炸穿整张深检图（同 open_page 当初
+    // 的 403 问题）。网络抖动/接口故障时模型读到提示可换检索词重试。
+    let results;
+    try {
+      results = await webSearch(query, maxResults, searchDepth);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return `搜索"${query.slice(0, 50)}"失败：${reason.slice(0, 200)}。可以换一个检索词重试，或用 open_page 打开搜索引擎结果页。`;
+    }
     return formatSearchResults(results);
   },
 };
