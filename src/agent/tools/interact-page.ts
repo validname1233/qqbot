@@ -129,6 +129,12 @@ export async function runInteractPage(
 }
 
 // 角色化描述 → Playwright locator。返回 any locator 类型由 withPage 内的 page 参数承担。
+//
+// getByRole(角色, { name }) 的 name 匹配的是元素的「可访问名称」——浏览器按
+// ACCM 规范计算出的结果，来源优先级：
+//   aria-labelledby > aria-label > 关联的 <label> > 元素自身内容文字 > placeholder
+// 对按钮/链接，"元素自身文字"是最常见来源（<button>下一页</button> 的可访问名称
+// 就是"下一页"，无需任何 aria 标注）；图标按钮（无文字）才真正依赖 aria-label。
 function locate(page: import("playwright").Page, target: string) {
   const separator = target.indexOf(":");
   const role = separator === -1 ? "button" : target.slice(0, separator);
@@ -141,7 +147,10 @@ function locate(page: import("playwright").Page, target: string) {
     );
   }
   if (resolved === "textbox" || resolved === "searchbox") {
-    // 文本框类：优先按占位符找，找不到再按无障碍名找
+    // 文本框类：按占位符和无障碍名求并集（.or() 无优先级，两条同时匹配取并集）。
+    // 必要性：placeholder 在 ACCM 优先级垫底，只写 placeholder 没写 aria-label/
+    // label 的输入框（真实网页的大多数）其可访问名称为空——getByRole 单路必查空；
+    // 而 placeholder 是这类框身上唯一可靠的文字。规范查询 + 现实兜底，两边都能命中。
     return page.getByPlaceholder(name).or(page.getByRole(resolved as "textbox", { name }));
   }
   return page.getByRole(resolved as Parameters<typeof page.getByRole>[0], { name });

@@ -11,6 +11,7 @@ import type { RawEvent } from "./events/raw.js";
 import { dispatch } from "./events/dispatcher.js";
 import { initializeNewsCron } from "./services/news/cron.js";
 import { initializePersonalities } from "./services/prompts/store.js";
+import { initializeMcpTools } from "./agent/mcp/initialize.js";
 import { logger } from "./services/logger.js";
 
 // 本地监听端口。只绑 127.0.0.1，不对公网暴露——外面只能经 nginx 进来。
@@ -145,6 +146,11 @@ initializeNewsCron();
 
 // 启动时从数据库加载所有自定义人格到内存缓存，避免运行时每次调用都查库。
 initializePersonalities();
+
+// MCP 服务器吸收（设计方案 docs/features/2026-09-02-MCP接入层设计方案.md）：
+// 连不上单个服务器只记 warn 跳过，不连累启动。await 是有意的——工具吸收完再
+// 对外收流量，避免第一波请求看到不完整的工具表。
+await initializeMcpTools();
 
 server.listen(PORT, HOST, () => {
   logger.info("webhook", `监听 http://${HOST}:${PORT}（经 nginx 反代对外提供 HTTPS）`);

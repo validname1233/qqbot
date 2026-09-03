@@ -93,6 +93,16 @@ export const config = {
   browseTotalBudgetMs: optionalEnvNumber("BROWSE_TOTAL_BUDGET_MS", 60000),
   browseMaxContentTokens: optionalEnvNumber("BROWSE_MAX_CONTENT_TOKENS", 3000),
   browseMaxLinks: optionalEnvNumber("BROWSE_MAX_LINKS", 30),
+  // MCP 服务器接入（全部选填，不配则 MCP 层整体不启用）：
+  //   mcpServers      —— "名字=地址" 逗号分隔列表。地址是 MCP 服务器的 Streamable HTTP
+  //                      端点（如 http://127.0.0.1:3001/mcp，建议走隧道内网）。
+  //   mcpExposeRules  —— "服务器:*" 或 "服务器:工具名" 逗号分隔的暴露规则（闸门）。
+  //                      只决定哪些 MCP 工具进全局工具表（模型可见），不进表的服务器
+  //                      仍可作为远程内核被代码直调。
+  //   mcpCallTimeoutMs —— 单次 tools/call 超时，防远程服务器卡死拖垮深检预算。
+  mcpServers: optionalEnv("MCP_SERVERS", ""),
+  mcpExposeRules: optionalEnv("MCP_EXPOSE", ""),
+  mcpCallTimeoutMs: optionalEnvNumber("MCP_CALL_TIMEOUT_MS", 30000),
 } as const;
 
 // 延迟校验：SEARCH_PROVIDER=aliyun 时阿里三项必填。放在 config 定义之后立即执行，
