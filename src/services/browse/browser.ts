@@ -10,8 +10,18 @@
 // 两个 interact_page 同时操作同一个 page 会互相踩（A 页还没读完就被 goto 到 B 页）。
 // 所有动作经 chain 排队，同一时刻只跑一个。
 
+import { platform } from "node:os";
 import { chromium, type Page } from "playwright";
 import { logger } from "../logger.js";
+
+// UA 伪装：headless Chromium 默认 UA 带 "HeadlessChrome" 标记，等于在 HTTP 头和
+// navigator.userAgent 里自报自动化身份，是 UA 黑名单类风控（如 GitHub 的降级页）
+// 最便宜的命中点。覆盖成同版本（151，对齐捆绑 Chromium 大版本）的真实 Chrome UA。
+// OS 段跟随真实系统：sec-ch-ua-platform 等客户端提示头仍按真实平台发送，
+// UA 写 Windows 而主机是 Linux 会制造新的自相矛盾指纹。
+const UA_OS =
+  platform() === "win32" ? "Windows NT 10.0; Win64; x64" : "X11; Linux x86_64";
+const CHROME_UA = `Mozilla/5.0 (${UA_OS}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36`;
 
 let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
 let page: Page | null = null;
@@ -22,10 +32,14 @@ export async function withPage<T>(fn: (page: Page) => Promise<T>): Promise<T> {
   const run = chain.then(async () => {
     if (browser === null) {
       logger.debug("browse", "browser 懒启动：launch chromium");
-      browser = await chromium.launch();
+      // --disable-blink-features=AutomationControlled：去掉 navigator.webdriver
+      // 自动化标记（与 UA 伪装同层，挡最便宜的第一道检测；IP 信誉问题管不着）
+      browser = await chromium.launch({
+        args: ["--disable-blink-features=AutomationControlled"],
+      });
     }
     if (page === null || page.isClosed()) {
-      page = await browser.newPage();
+      page = await browser.newPage({ userAgent: CHROME_UA });
     }
     return fn(page);
   });
