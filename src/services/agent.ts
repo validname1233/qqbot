@@ -12,6 +12,7 @@ import { addMemoryTool } from "../agent/tools/add-memory.js";
 import { deleteMemoryTool } from "../agent/tools/delete-memory.js";
 import { clearAllMemoriesTool } from "../agent/tools/clear-all-memories.js";
 import { agentOpenPageTool } from "../agent/tools/open-page.js";
+import { getTimeTool } from "../agent/tools/get-time.js";
 
 registerTool(setReminderTool);
 registerTool(searchTool);
@@ -22,6 +23,9 @@ registerTool(clearAllMemoriesTool);
 // 方案见 docs/features/2026-09-02-fetch-tool实现方案.md）。日常版 description 无
 // interact_page 引用；深检注册表另持原版，同一 run 逻辑单一维护。
 registerTool(agentOpenPageTool);
+// get_time：拿服务器当前时间。模型对"今天几号"没有可靠感知（训练数据截止），
+// 日期类问题必须靠工具而不是猜。
+registerTool(getTimeTool);
 
 export const agentService: CommandService = {
   name: "Agent",

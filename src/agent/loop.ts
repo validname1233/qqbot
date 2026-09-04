@@ -38,8 +38,10 @@ import type { ChatMessage } from "./types.js";
 // 规则文本在 FUNCTIONAL_PROMPTS.agent_judge；agent_judge 在 builder.ts 登记为
 // "纯功能场景"，getSystemPrompt 对它只返回功能规则、不拼人格。
 
-// 工具调用最多几轮。1 表示：调一次工具就必须收尾，不允许模型看完工具结果又申请下一轮工具。
-const MAX_TOOL_TURNS = 1;
+// 工具调用最多几轮。2 表示：允许一次串行依赖——第一轮工具（如 get_time）的
+// 返回值可以被第二轮工具（如 search）当参数用；不需要串行的请求模型第一轮
+// 就收尾，不会白付第二轮的调用成本。
+const MAX_TOOL_TURNS = 2;
 
 // messages 用累加式的 ReducedValue：每个节点只管返回"这一步新增的消息"，
 // 图会自动 concat 到已有 messages 后面——不用像原来手写循环那样自己 push。
