@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "kb": {
+      "url": "https://kb.example.com/mcp",
+      "apiKey": "这里填服务器的鉴权 key（内网自部署不鉴权的服务器可整行删掉）",
+      "expose": ["kb_search"]
+    },
+    "home": {
+      "url": "http://192.168.10.2:3001/mcp",
+      "expose": ["*"]
+    }
+  }
+}

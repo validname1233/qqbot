@@ -8,7 +8,7 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { config } from "../../config.js";
+import { config, type McpServerConfig } from "../../config.js";
 import { logger } from "../../services/logger.js";
 
 // 一个已连接的服务器条目：Client 实例 + 服务器名（工具名前缀用）
@@ -34,41 +34,25 @@ export interface McpCallResult {
   isError?: boolean;
 }
 
-// 解析 MCP_SERVERS 配置："名字=地址,名字=地址" → [{name, url}]
-export function parseMcpServersConfig(raw: string): Array<{ name: string; url: string }> {
-  return raw
-    .split(",")
-    .map((piece) => piece.trim())
-    .filter((piece) => piece !== "")
-    .map((piece) => {
-      const eq = piece.indexOf("=");
-      if (eq === -1) {
-        logger.warn("mcp", `MCP_SERVERS 条目 "${piece}" 缺少 =（格式：名字=地址），已跳过`);
-        return null;
-      }
-      const name = piece.slice(0, eq).trim();
-      const url = piece.slice(eq + 1).trim();
-      if (name === "" || url === "") {
-        logger.warn("mcp", `MCP_SERVERS 条目 "${piece}" 名字或地址为空，已跳过`);
-        return null;
-      }
-      return { name, url };
-    })
-    .filter((entry): entry is { name: string; url: string } => entry !== null);
-}
-
-// 建一个客户端连接（不发送任何请求，握手在 connect 时完成）
-async function createConnection(name: string, url: string): Promise<ServerEntry> {
+// 建一个客户端连接（不发送任何请求，握手在 connect 时完成）。
+// apiKey 非空时以 Authorization: Bearer 头随每个 HTTP 请求发送（握手/列表/调用
+// 全带）——公网 MCP 服务器（如托管服务、知识库端侧节点）的鉴权就靠这层；
+// 内网自部署不鉴权的服务器 apiKey 留空，行为与旧版一致。
+async function createConnection(server: McpServerConfig): Promise<ServerEntry> {
   const client = new Client({ name: `qq-bot`, version: "1.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(url));
+  const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+    requestInit: server.apiKey !== ""
+      ? { headers: { Authorization: `Bearer ${server.apiKey}` } }
+      : undefined,
+  });
   await client.connect(transport); // 握手（initialize）失败会抛——调用方决定降级
-  return { name, client };
+  return { name: server.name, client };
 }
 
 // 连接一个服务器并拉取工具定义。失败抛错（initializeMcpTools 捕获后降级跳过）。
-export async function connectAndList(name: string, url: string): Promise<McpToolDefinition[]> {
-  const entry = await createConnection(name, url);
-  servers.set(name, entry);
+export async function connectAndList(server: McpServerConfig): Promise<McpToolDefinition[]> {
+  const entry = await createConnection(server);
+  servers.set(server.name, entry);
   const listResult = await entry.client.listTools();
   return (listResult.tools ?? []).map((tool) => ({
     name: tool.name ?? "",
@@ -113,10 +97,10 @@ export async function callTool(
         // 第一次失败：疑似断线，按配置重建连接再试一次（DDNS 域名自动跟随家里新 IP）
         logger.warn("mcp", `callTool ${serverName}/${toolName} 失败（${message.slice(0, 120)}），重连一次重试`);
         try {
-          const configured = parseMcpServersConfig(config.mcpServers).find((s) => s.name === serverName);
+          const configured = config.mcpServerConfigs.find((s) => s.name === serverName);
           if (configured === undefined) throw new Error("配置里找不到该服务器的地址");
           servers.delete(serverName);
-          entry = await createConnection(serverName, configured.url);
+          entry = await createConnection(configured);
           servers.set(serverName, entry);
           continue;
         } catch (reconnectError) {

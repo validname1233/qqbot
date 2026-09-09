@@ -1,12 +1,24 @@
 // test/deep_research/verify-mcp.ts —— MCP 层端到端验证。
-// 用 SDK 服务端在本机起一个模拟 MCP 服务器（测试工具 echo），然后走真实的
-// initializeMcpTools 吸收 + runTool 调用 + 适配器加工全链路。
+// 用 SDK 服务端在本机起一个模拟 MCP 服务器（测试工具 echo，带 Bearer key 鉴权），
+// 然后走真实的 initializeMcpTools 吸收 + runTool 调用 + 适配器加工全链路。
 // 用法：npx tsx --env-file=.env test/deep_research/verify-mcp.ts
-// 注意：env 覆盖必须在任何 src import 之前执行（ESM 静态 import 会提升），
-// 所以这里用"先设 env → 再动态 import"的两段式，覆盖 MCP_SERVERS/MCP_EXPOSE。
+// 注意：env/配置文件必须在任何 src import 之前就位（ESM 静态 import 会提升、
+// config.ts 读文件在模块加载时执行），所以这里用"先写 mcp.json 再设
+// MCP_CONFIG_PATH → 动态 import"的两段式。
 
-process.env.MCP_SERVERS = "mock=http://127.0.0.1:3789/mcp";
-process.env.MCP_EXPOSE = "mock:*";
+import { writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+// 临时 mcp.json：mock 服务器 + Bearer key + 全放行闸门
+const MCP_KEY = "test-bearer-key-123";
+const MCP_CONFIG = join(tmpdir(), `verify-mcp-${process.pid}.json`);
+writeFileSync(MCP_CONFIG, JSON.stringify({
+  servers: {
+    mock: { url: "http://127.0.0.1:3789/mcp", apiKey: MCP_KEY, expose: ["*"] },
+  },
+}, null, 2));
+process.env.MCP_CONFIG_PATH = MCP_CONFIG;
 
 let failures = 0;
 function check(name: string, cond: boolean, detail = ""): void {
@@ -30,6 +42,12 @@ mcp.tool("echo", "回显输入的文本", { text: z.string() }, async ({ text })
 
 const httpServer = createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/mcp") {
+    // Bearer 鉴权：模拟公网服务器的行为——key 不对直接 401，验证 client.ts
+    // 的 requestInit headers 真的把 Authorization 头发出来了
+    if (req.headers.authorization !== `Bearer ${MCP_KEY}`) {
+      res.writeHead(401).end();
+      return;
+    }
     // 无状态模式：每个请求独立 transport（不设 sessionIdGenerator），
     // enableJsonResponse 单次 JSON 往返——SDK 服务端的最简合法形态
     const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
@@ -88,5 +106,6 @@ check("深检工具表未混入 MCP 工具", !deepNames.some((n) => n.startsWith
 
 await disconnectAll();
 httpServer.close();
+rmSync(MCP_CONFIG, { force: true });
 console.log(failures === 0 ? "\n[verify-mcp] 全部通过 ✓" : `\n[verify-mcp] ${failures} 项失败 ✗`);
 process.exit(failures === 0 ? 0 : 1);

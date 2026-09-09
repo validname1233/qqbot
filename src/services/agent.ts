@@ -13,6 +13,7 @@ import { deleteMemoryTool } from "../agent/tools/delete-memory.js";
 import { clearAllMemoriesTool } from "../agent/tools/clear-all-memories.js";
 import { agentOpenPageTool } from "../agent/tools/open-page.js";
 import { getTimeTool } from "../agent/tools/get-time.js";
+import { recallMemoryTool } from "../agent/tools/recall-memory.js";
 
 registerTool(setReminderTool);
 registerTool(searchTool);
@@ -26,6 +27,9 @@ registerTool(agentOpenPageTool);
 // get_time：拿服务器当前时间。模型对"今天几号"没有可靠感知（训练数据截止），
 // 日期类问题必须靠工具而不是猜。
 registerTool(getTimeTool);
+// recall_memory：冷存储检索（300 条原始对话按需翻查，两级记忆方案
+// docs/features/2026-09-05-短期记忆两级化方案.md）。只挂全局表——深检不翻用户旧对话。
+registerTool(recallMemoryTool);
 
 export const agentService: CommandService = {
   name: "Agent",

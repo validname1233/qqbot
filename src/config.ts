@@ -2,7 +2,8 @@
 // 好处：凭据"从哪来、缺了怎么报错"只写一遍，别处直接 import 现成的值。
 
 // process.env 是 Node 提供的环境变量对象，类型是 Record<string, string | undefined>——
-// 注意每个值都可能是 undefined（变量没设时），所以下面必须检查。
+// 注意每个值可能是 undefined（变量没设时），所以下面必须检查。
+import { readFileSync } from "node:fs";
 import { env } from "node:process";
 
 // 一个小工具：读取必填的环境变量，缺失就直接抛错退出。
@@ -32,6 +33,63 @@ function optionalEnv(key: string, fallback: string): string {
 function optionalEnvNumber(key: string, fallback: number): number {
   const value = Number(env[key]);
   return Number.isFinite(value) ? value : fallback;
+}
+
+// MCP 服务器配置（mcp.json）：一条服务器 = url + 可选 apiKey + 可选 expose。
+// 校验失败直接抛错——配置错误让启动期就报清楚哪一条不对，比静默跳过半台服务器好。
+export interface McpServerConfig {
+  name: string;
+  url: string;
+  apiKey: string; // 可为空串（自部署内网服务器不鉴权）
+  expose: string[]; // 该服务器放行进模型工具表的工具名，"*" = 全放行；空数组 = 全不放行（仅作远程内核直调）
+}
+
+// 读取并校验 mcp.json。文件不存在 = MCP 层不启用（返回空数组）；存在但解析/校验
+// 失败 = 抛错。路径可用 MCP_CONFIG_PATH 覆盖（测试脚本指自己的临时配置）。
+function loadMcpConfig(): McpServerConfig[] {
+  const path = optionalEnv("MCP_CONFIG_PATH", "mcp.json");
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return []; // 文件不存在：合法的"不启用"状态
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`MCP 配置 ${path} 不是合法 JSON：${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const servers = (parsed as { servers?: unknown }).servers;
+  if (servers === undefined || typeof servers !== "object" || servers === null || Array.isArray(servers)) {
+    throw new Error(`MCP 配置 ${path} 缺少 "servers" 对象（形如 { "servers": { "名字": { "url": "...", "apiKey": "...", "expose": ["*"] } } }）`);
+  }
+
+  const out: McpServerConfig[] = [];
+  for (const [name, value] of Object.entries(servers as Record<string, unknown>)) {
+    if (typeof value !== "object" || value === null) {
+      throw new Error(`MCP 配置 ${path}：服务器 "${name}" 的值必须是对象`);
+    }
+    const { url, apiKey, expose } = value as { url?: unknown; apiKey?: unknown; expose?: unknown };
+    if (typeof url !== "string" || url.trim() === "") {
+      throw new Error(`MCP 配置 ${path}：服务器 "${name}" 缺少 url`);
+    }
+    if (apiKey !== undefined && typeof apiKey !== "string") {
+      throw new Error(`MCP 配置 ${path}：服务器 "${name}" 的 apiKey 必须是字符串`);
+    }
+    if (expose !== undefined && !Array.isArray(expose)) {
+      throw new Error(`MCP 配置 ${path}：服务器 "${name}" 的 expose 必须是字符串数组（如 ["kb_search"] 或 ["*"]）`);
+    }
+    out.push({
+      name,
+      url: url.trim(),
+      apiKey: (apiKey ?? "").trim(),
+      expose: (expose as unknown[] | undefined ?? []).filter((e): e is string => typeof e === "string"),
+    });
+  }
+  return out;
 }
 
 // 把校验好的凭据导出成一个只读对象。
@@ -93,15 +151,13 @@ export const config = {
   browseTotalBudgetMs: optionalEnvNumber("BROWSE_TOTAL_BUDGET_MS", 60000),
   browseMaxContentTokens: optionalEnvNumber("BROWSE_MAX_CONTENT_TOKENS", 3000),
   browseMaxLinks: optionalEnvNumber("BROWSE_MAX_LINKS", 30),
-  // MCP 服务器接入（全部选填，不配则 MCP 层整体不启用）：
-  //   mcpServers      —— "名字=地址" 逗号分隔列表。地址是 MCP 服务器的 Streamable HTTP
-  //                      端点（如 http://127.0.0.1:3001/mcp，建议走隧道内网）。
-  //   mcpExposeRules  —— "服务器:*" 或 "服务器:工具名" 逗号分隔的暴露规则（闸门）。
-  //                      只决定哪些 MCP 工具进全局工具表（模型可见），不进表的服务器
-  //                      仍可作为远程内核被代码直调。
+  // MCP 服务器接入（mcp.json，可选，文件不存在则 MCP 层整体不启用）：
+  //   mcpServerConfigs —— 逐服务器 { name, url, apiKey, expose }。apiKey 非空时以
+  //                       Authorization: Bearer 头随每个请求发送（公网服务器的鉴权）；
+  //                       expose 是闸门（哪些工具进模型工具表，"*" 全放行），空 = 只作
+  //                       远程内核被代码直调。路径可用 MCP_CONFIG_PATH 覆盖。
   //   mcpCallTimeoutMs —— 单次 tools/call 超时，防远程服务器卡死拖垮深检预算。
-  mcpServers: optionalEnv("MCP_SERVERS", ""),
-  mcpExposeRules: optionalEnv("MCP_EXPOSE", ""),
+  mcpServerConfigs: loadMcpConfig(),
   mcpCallTimeoutMs: optionalEnvNumber("MCP_CALL_TIMEOUT_MS", 30000),
 } as const;
 

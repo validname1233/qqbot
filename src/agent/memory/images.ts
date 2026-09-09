@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import type { BotEvent } from "../../events/registry.js";
 import { isImageAttachment } from "../../events/attachments.js";
 import { memoryKey } from "../context.js";
+import { COLD_MESSAGES } from "./sqlite.js";
 import { describeImage } from "../../services/vision.js";
 import { logger } from "../../services/logger.js";
 import { config } from "../../config.js";
@@ -92,19 +93,22 @@ async function downloadImage(url: string): Promise<Uint8Array | null> {
 // 早于"窗口内最旧一条消息"的 created_at 即出窗。short_term_messages 不存 qq_msg_id，
 // 加列关联成本高，时间对齐的误差（同毫秒边界一两条消息）对"最近几张图"语义无害。
 // 触发时机：新图片入库时、/Agent 查询时——都是"本来就要碰这个 key"的时点，不需要定时任务。
+//
+// 窗口口径 = 冷窗口 COLD_MESSAGES（300 条，两级记忆方案 §3.5）：recall 翻出的旧对话
+// 里 [图片:<id>] 占位符要还能展开，图片就必须活满冷窗口。磁盘存量变多（约 ×15），
+// 但识图仍是懒的——只有进热窗口且触发 /Agent 才识图，vision 成本不涨。
 function pruneImagesOutsideWindow(key: string): void {
-  // 窗口内最旧消息的 created_at：短期记忆的读取口径是"最近 MAX_MESSAGES 条"，
-  // 这里用同一条 SQL 反查（ORDER BY id DESC LIMIT 20 取第 20 条的 created_at）。
-  // MAX_MESSAGES 写死成 20 与 sqlite.ts 保持一致（它没导出这个常量，导出改动面更大，
-  // 两处写死加注释互指，改窗口大小时两处都要动——显式优于隐式耦合）。
+  // 冷窗口内最旧消息的 created_at：ORDER BY id DESC LIMIT 1 OFFSET <COLD-1> 反查。
+  // OFFSET 用 sqlite.ts 导出的常量算出，消灭写死的数字（原 OFFSET 19 即热窗口口径，
+  // 已随两级化改为冷窗口联动）。
   const windowRow = db.prepare(
     `SELECT created_at FROM short_term_messages
      WHERE key = ?
      ORDER BY id DESC
-     LIMIT 1 OFFSET 19`,
-  ).get(key) as { created_at: number } | undefined;
+     LIMIT 1 OFFSET ?`,
+  ).get(key, COLD_MESSAGES - 1) as { created_at: number } | undefined;
 
-  if (windowRow === undefined) return; // 该 key 消息不足 20 条，无出窗可言
+  if (windowRow === undefined) return; // 该 key 消息不足 COLD_MESSAGES 条，无出窗可言
 
   const stale = db.prepare(
     `SELECT id, file_path FROM message_images WHERE key = ? AND created_at < ?`,

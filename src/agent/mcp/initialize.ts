@@ -10,50 +10,38 @@
 import { config } from "../../config.js";
 import { logger } from "../../services/logger.js";
 import { registerTool } from "../registry.js";
-import { parseMcpServersConfig, connectAndList } from "./client.js";
+import { connectAndList } from "./client.js";
 import { wrapMcpTool } from "./bridge.js";
 
-// 解析 MCP_EXPOSE 暴露规则（闸门）："服务器:*" 或 "服务器:工具名" 逗号分隔。
-// 返回谓词函数：该服务器的该工具是否放行进全局工具表。
-function parseExposeRules(raw: string): (server: string, tool: string) => boolean {
-  const rules = raw
-    .split(",")
-    .map((piece) => piece.trim())
-    .filter((piece) => piece !== "");
-
-  return (server, tool) =>
-    rules.some((rule) => rule === `${server}:*` || rule === `${server}:${tool}`);
-}
-
 export async function initializeMcpTools(): Promise<void> {
-  const servers = parseMcpServersConfig(config.mcpServers);
+  const servers = config.mcpServerConfigs;
   if (servers.length === 0) {
-    logger.debug("mcp", "未配置 MCP_SERVERS，MCP 层不启用");
+    logger.debug("mcp", "未找到 mcp.json（或 servers 为空），MCP 层不启用");
     return;
   }
 
-  const exposed = parseExposeRules(config.mcpExposeRules);
   let totalAbsorbed = 0;
 
-  for (const { name, url } of servers) {
+  for (const server of servers) {
     try {
-      const tools = await connectAndList(name, url);
+      const tools = await connectAndList(server);
+      const exposed = server.expose; // 闸门已随配置加载进每服务器条目："*" 全放行，空数组全不放行
       let absorbed = 0;
       for (const def of tools) {
         if (def.name === "") continue;
-        if (!exposed(name, def.name)) {
-          logger.debug("mcp", `工具 ${name}/${def.name} 未被 MCP_EXPOSE 放行，不进工具表（仍可作远程内核直调）`);
+        if (!exposed.includes("*") && !exposed.includes(def.name)) {
+          logger.debug("mcp", `工具 ${server.name}/${def.name} 未被 expose 放行，不进工具表（仍可作远程内核直调）`);
           continue;
         }
-        registerTool(wrapMcpTool(name, def));
+        registerTool(wrapMcpTool(server.name, def));
         absorbed++;
       }
       totalAbsorbed += absorbed;
-      logger.info("mcp", `服务器 ${name} 就绪：发现 ${tools.length} 个工具，吸收 ${absorbed} 个进全局工具表`);
+      logger.info("mcp", `服务器 ${server.name} 就绪：发现 ${tools.length} 个工具，吸收 ${absorbed} 个进全局工具表`);
     } catch (error) {
       // 连接/握手/listTools 失败：标记跳过（callTool 对未连接服务器返回友好文案）
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn("mcp", `服务器 ${name}（${url}）连接失败，本次跳过：${message.slice(0, 200)}`);
+      logger.warn("mcp", `服务器 ${server.name}（${server.url}）连接失败，本次跳过：${message.slice(0, 200)}`);
     }
   }
 
