@@ -14,5 +14,9 @@ export interface Tool {
   // 适用场景：工具返回的是"已有记忆的复印件"或超大正文，入库会挤爆热窗口、
   // 污染后续检索。默认缺省 = 照常入库（所有既有工具行为不变）。
   skipMemory?: boolean;
+  // 可选声明：执行前推送给用户的进度文案（progress-bus.ts，经 registry.ts 的
+  // runTool 切面 emit）。字符串为静态文案；函数接收本次调用参数、返回动态文案
+  // （如 open_page 带 URL）。缺省 = 不推送（工具对进度推送零感知，行为不变）。
+  progressNote?: string | ((args: Record<string, unknown>) => string);
   run(args: Record<string, unknown>, ctx: MessageContext): Promise<string>;
 }

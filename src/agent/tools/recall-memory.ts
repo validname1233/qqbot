@@ -31,6 +31,12 @@ export const recallMemoryTool: Tool = {
     required: ["keywords"],
   },
   skipMemory: true,
+  progressNote: (args) => {
+    const kws = Array.isArray(args.keywords)
+      ? args.keywords.filter((k): k is string => typeof k === "string").slice(0, 3).join("、")
+      : "";
+    return kws !== "" ? `---正在翻查更早的记忆：${kws}---` : "---正在翻查更早的记忆---";
+  },
 
   async run(args: Record<string, unknown>, ctx) {
     const raw = args.keywords;

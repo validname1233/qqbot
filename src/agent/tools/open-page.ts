@@ -39,6 +39,12 @@ export const openPageTool: Tool = {
   name: "open_page",
   description: openPageSchema.function.description,
   parameters: openPageSchema.function.parameters,
+  progressNote: (args) => {
+    const url = typeof args.url === "string" ? args.url : "";
+    if (url !== "") return `---正在打开网页：${url.slice(0, 40)}---`;
+    const link = typeof args.link === "number" ? args.link : "";
+    return link !== "" ? `---正在打开页面内链接 ${link}---` : "---正在打开网页---";
+  },
   run: (args: Record<string, unknown>, ctx: MessageContext) => runOpenPage(args, ctx.event),
 };
 

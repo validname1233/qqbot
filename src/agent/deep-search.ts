@@ -41,7 +41,7 @@ import { releaseBrowser } from "../services/browse/browser.js";
 import { toolSchemas, runTool } from "./deep-search/registry.js";
 import { loadPage } from "./tools/open-page.js";
 import { searchTool } from "./tools/search.js";
-import { pushGroupMessage, pushC2CMessage } from "../qq/messages.js";
+import { emitProgress, subscribeProgress } from "../services/progress-bus.js";
 import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
 import { sessionKey } from "../session/key.js";
 import { logger } from "../services/logger.js";
@@ -245,27 +245,15 @@ async function searchNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
 // 输入 = startMaterial（URL 预读页面 或 searchNode 的搜索结果），输出写 chain[0]。
 // 不计入 turnCount（不是浏览轮次，墙钟预算覆盖耗时）。检索已由 searchNode 完成，
 // 这里只做"看过材料定方向"。
-// 进度推送：节点开始时主动推一条"正在规划路线"——深检全程 1~3 分钟，用户在
-// 收到最终报告前没有任何反馈，这条推送是进度感知的第一段（后续可按需在
-// 浏览节点再加）。推送失败不影响流程（catch 静默）：进度提示是锦上添花，
-// 不能因 QQ 接口抖动炸掉调研本身。
 async function planNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   // 预算已耗尽（预读/起点搜索吃光预算的极端情况）：跳过模型调用，交给条件边直接收尾
   if (Date.now() >= state.deadline) {
     return { chain: [] };
   }
 
-  // 进度推送（主动消息，不依附于原消息——回复链路 5 分钟窗口对深检不可靠）
-  const event = state.ctx.event;
-  try {
-    if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
-      await pushGroupMessage(event.groupOpenid, "---正在规划路线---");
-    } else if (event.type === "C2C_MESSAGE_CREATE") {
-      await pushC2CMessage(event.authorOpenid, "---正在规划路线---");
-    }
-  } catch (error) {
-    logger.warn("browse", `进度推送失败（忽略）：${error instanceof Error ? error.message : error}`);
-  }
+  // 进度推送（走 progress-bus：节点没有 runTool 切面，直接 emit——订阅由
+  // runDeepSearch 挂载，群/私聊分支和失败兜底都在 bus 内部，节点只声明"发生了什么"）。
+  emitProgress(state.ctx.event, "---正在规划路线---");
 
   const plan = await callModel(
     [
@@ -496,6 +484,12 @@ export async function runDeepSearch(
   const { memoryKey, sqliteMemoryStore } = await importMemory();
   const key = memoryKey(ctx.event);
 
+  // 进度推送订阅（progress-bus，二期接入）：planNode 的"正在规划路线"和浏览循环
+  // 里声明了 progressNote 的工具（search/open_page/interact_page，经 runTool 切面）
+  // 的进度，都送到发起这次深检的会话。本地入口（runDeepSearchLocally）不挂订阅，
+  // emit 到无订阅者是 no-op——测试输出不被推送污染。
+  const unsubscribeProgress = subscribeProgress(ctx.event);
+
   try {
     const result = await deepSearchGraph.invoke({
       messages: [],
@@ -524,6 +518,7 @@ export async function runDeepSearch(
     );
     return report;
   } finally {
+    unsubscribeProgress();
     endControlledFlow(flowKey, controller);
     // A 档生命周期落点：无论成败，图跑完就关浏览器
     await releaseBrowser();

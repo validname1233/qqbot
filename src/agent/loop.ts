@@ -30,6 +30,7 @@ import { runTool, toolSchemas, memoryExemptToolNames } from "./registry.js";
 import { sqliteMemoryStore } from "./memory/sqlite.js";
 import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
 import { sessionKey } from "../session/key.js";
+import { subscribeProgress } from "../services/progress-bus.js";
 import type { ChatMessage } from "./types.js";
 
 // llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务。
@@ -311,6 +312,11 @@ export async function runAgentTurn(
     return "上一个任务还在跑哦～先发 /stop 停掉它，再重新发起吧。";
   }
 
+  // 进度推送订阅（progress-bus，一期只挂 /Agent）：这次请求期间，声明了
+  // progressNote 的工具执行前会向该会话推送进度。订阅作用域与并发闸对齐——
+  // 正常完成、/stop 中断、异常三条路径都经 finally 退订。
+  const unsubscribeProgress = subscribeProgress(ctx.event);
+
   try {
     const key = memoryKey(ctx.event);
     const history = await sqliteMemoryStore.get(key);
@@ -384,6 +390,7 @@ export async function runAgentTurn(
 
     return reply;
   } finally {
+    unsubscribeProgress();
     endControlledFlow(flowKey, controller);
   }
 }

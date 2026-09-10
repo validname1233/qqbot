@@ -4,6 +4,7 @@
 import type { MessageContext } from "../types.js";
 import type { Tool } from "./tool.js";
 import type { ToolSchema } from "./types.js";
+import { emitProgress } from "../services/progress-bus.js";
 
 const tools = new Map<string, Tool>();
 
@@ -34,6 +35,9 @@ export function memoryExemptToolNames(): Set<string> {
 
 // 按名字执行一个工具。名字不存在或 run 抛错，都统一在这里兜成"工具执行失败"，
 // 回给模型的内容保持固定短语，简单可靠。
+// 进度推送切面（progress-bus.ts）：声明了 progressNote 的工具在执行前 emit 一条
+// 进度文案，无订阅者（非 /Agent 请求期间）时 no-op。推送失败由 bus 内部兜住，
+// 不影响工具执行。
 export async function runTool(
   name: string,
   args: Record<string, unknown>,
@@ -42,6 +46,12 @@ export async function runTool(
   const tool = tools.get(name);
   if (tool === undefined) {
     return "工具执行失败";
+  }
+  if (tool.progressNote !== undefined) {
+    emitProgress(
+      ctx.event,
+      typeof tool.progressNote === "string" ? tool.progressNote : tool.progressNote(args),
+    );
   }
   try {
     return await tool.run(args, ctx);

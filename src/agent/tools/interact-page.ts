@@ -66,6 +66,14 @@ export const interactPageTool: Tool = {
   name: "interact_page",
   description: interactPageSchema.function.description,
   parameters: interactPageSchema.function.parameters,
+  // 进度文案带动作：interact_page 的耗时主要在 Playwright 渲染（数秒级），
+  // "正在用浏览器交互"与 open_page 的"正在打开网页"区分开，用户能感知到
+  // 当前卡在哪类操作上。
+  progressNote: (args) => {
+    const url = typeof args.url === "string" ? args.url.slice(0, 40) : "";
+    const action = typeof args.action === "string" && args.action !== "" ? args.action : "打开";
+    return url !== "" ? `---正在用浏览器${action}：${url}---` : `---正在用浏览器${action}页面---`;
+  },
   run: (args: Record<string, unknown>, ctx: MessageContext) => runInteractPage(args, ctx.event),
 };
 

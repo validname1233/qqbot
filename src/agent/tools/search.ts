@@ -16,6 +16,10 @@ export const searchTool: Tool = {
     "联网搜索最新信息。用于回答需要实时/最新数据或你不确定的事实性问题。返回若干条标题+链接+摘要。" +
     "涉及「最近/最新/今年」等相对时间的请求：先用 get_time 获取当前日期，把具体时间范围" +
     "（如「2026年8月31日」）融进搜索词再调用本工具，不要把「最近」这类词直接当搜索词。",
+  progressNote: (args) =>
+    typeof args.query === "string" && args.query.trim() !== ""
+      ? `---正在联网搜索：${args.query.slice(0, 30)}---`
+      : "---正在联网搜索---",
   parameters: {
     type: "object",
     properties: {

@@ -13,6 +13,7 @@ import type { ToolSchema } from "../types.js";
 import { openPageTool } from "../tools/open-page.js";
 import { interactPageTool } from "../tools/interact-page.js";
 import { searchTool } from "../tools/search.js";
+import { emitProgress } from "../../services/progress-bus.js";
 
 const tools = new Map<string, Tool>();
 
@@ -42,6 +43,14 @@ export async function runTool(
   const tool = tools.get(name);
   if (tool === undefined) {
     return `没有名为 ${name} 的工具，可用：${[...tools.keys()].join("、")}。`;
+  }
+  // 进度推送切面（progress-bus）：深检一期未挂订阅，emit 到无订阅者是 no-op；
+  // 切面先埋好，二期 runDeepSearch 挂订阅即生效（方案 §4）。
+  if (tool.progressNote !== undefined) {
+    emitProgress(
+      ctx.event,
+      typeof tool.progressNote === "string" ? tool.progressNote : tool.progressNote(args),
+    );
   }
   return tool.run(args, ctx);
 }
