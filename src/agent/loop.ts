@@ -352,8 +352,11 @@ export async function runAgentTurn(
     // 旧对话复印件，落库会挤爆热窗口并被再次检索到）。身份判定走结构化关联：
     // tool 消息的 tool_call_id ↔ assistant 消息 tool_calls[].id 反查出工具名，
     // 再查注册表的豁免名单——不按内容猜（前缀匹配那类做法，工具返回格式一改
-    // 或内容碰巧相似就静默失效）。assistant 的 tool_calls 消息保留——它是模型
-    // 当时真实行为的一部分。
+    // 或内容碰巧相似就静默失效）。
+    // 豁免的不是"删除"而是"换成占位符"：assistant(tool_calls) 与 tool 回话消息
+    // 在 API 协议里绑定成对，删掉 tool 会让 assistant(tool_calls) 悬空——下轮
+    // 这段 history 重放时撞上 DeepSeek 的消息格式校验直接 400。占位符保住
+    // tool_call_id 的配对，正文换成一句说明，协议合法、语义也不误导。
     const exemptTools = memoryExemptToolNames();
     const toolCallNames = new Map<string, string>();
     for (const msg of result.messages) {
@@ -361,11 +364,16 @@ export async function runAgentTurn(
         for (const call of msg.tool_calls) toolCallNames.set(call.id, call.function.name);
       }
     }
-    const newMessages = result.messages.slice(1 + history.length).filter((msg) => {
-      if (msg.role !== "tool") return true;
+    const newMessages = result.messages.slice(1 + history.length).map((msg) => {
+      if (msg.role !== "tool") return msg;
       const toolName =
         msg.tool_call_id !== undefined ? toolCallNames.get(msg.tool_call_id) : undefined;
-      return !(toolName !== undefined && exemptTools.has(toolName));
+      if (toolName === undefined || !exemptTools.has(toolName)) return msg;
+      return {
+        role: "tool" as const,
+        content: `${toolName} 结果返回`,
+        tool_call_id: msg.tool_call_id,
+      };
     });
     await sqliteMemoryStore.append(
       key,
