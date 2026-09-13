@@ -6,8 +6,8 @@
 //
 // 三个调用方（全部经 webSearch，谁都不直接碰具体 provider）：
 //   agent/tools/search.ts   /Agent 的 search 工具（透传 maxResults/searchDepth）
-//   services/news/cron.ts   每日新闻 cron（关键词+日期）
 //   agent/deep-search.ts    深检图 searchNode（调研起点）
+//   services/scheduler/     通用定时任务（到点跑的 /Agent 里模型可能调 search 工具）
 //
 // 调研背景与选型记录：docs/superpowers/specs/2026-08-31-search-provider-research.md
 // （Bing v7 已退役）与 2026-08-31-aliyun-web-search-research.md（阿里接入规范）。

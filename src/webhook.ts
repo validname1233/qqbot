@@ -9,7 +9,7 @@ import { signValidation, verifySignature } from "./qq/crypto.js";
 import { parseEvent } from "./events/registry.js";
 import type { RawEvent } from "./events/raw.js";
 import { dispatch } from "./events/dispatcher.js";
-import { initializeNewsCron } from "./services/news/cron.js";
+import { initializeScheduler } from "./services/scheduler/cron.js";
 import { initializePersonalities } from "./services/prompts/store.js";
 import { initializeMcpTools } from "./agent/mcp/initialize.js";
 import { logger } from "./services/logger.js";
@@ -140,9 +140,9 @@ const server = createServer((req, res) => {
   });
 });
 
-// 启动时把数据库里已开启的群新闻订阅重新挂载成 cron 任务，保证进程重启后
-// 不需要用户重新 /新闻订阅 开。放在 listen 之前——先把定时任务准备好，再对外接收流量。
-initializeNewsCron();
+// 启动时把数据库里已开启的定时任务重新挂载成 cron 任务，保证进程重启后
+// 不需要用户重新添加。放在 listen 之前——先把定时任务准备好，再对外接收流量。
+initializeScheduler();
 
 // 启动时从数据库加载所有自定义人格到内存缓存，避免运行时每次调用都查库。
 initializePersonalities();

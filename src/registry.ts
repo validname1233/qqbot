@@ -10,7 +10,7 @@ import type {
 import type { BotEvent } from "./events/registry.js";
 import { reminderService } from "./services/reminder.js";
 import { agentService } from "./services/agent.js";
-import { newsSubscriptionService } from "./services/news/subscription.js";
+import { scheduledTaskService } from "./services/scheduler/task.js";
 import { setPersonalityService } from "./services/prompts/command.js";
 import { deepSearchService } from "./services/deep-search.js";
 import { helpService } from "./services/help.js";
@@ -33,8 +33,10 @@ registerCommand(reminderService);
 // 聊天消息也会推事件过来，若仍有兜底 service 会导致机器人对群里所有话搭话。
 // 和 /定时任务 等命令的语义保持一致：不点名就不触发。
 registerCommand(agentService);
-// 群新闻订阅：纯代码写死的固定功能，不经过 Agent/LLM 决策层，用户只能开关/调参。
-registerCommand(newsSubscriptionService);
+// 通用定时任务：用户存一条提示词，到点跑一次 /Agent 并把结果推回该会话
+//（群聊/单聊都支持；取代原"群新闻订阅"——新闻推送现在是一条提示词为
+//"搜索今天的XX新闻并播报"的定时任务）。
+registerCommand(scheduledTaskService);
 // 提示词自定义：按群设置自定义人格（人格+功能分离拼接）。
 registerCommand(setPersonalityService);
 // 深度检索：独立工作流（Tavily 起点 + 多轮 open_page 深挖 + 汇总报告），

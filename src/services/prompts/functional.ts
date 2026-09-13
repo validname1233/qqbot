@@ -72,11 +72,6 @@ ${OUTPUT_FORMAT_RULE}`,
 
 ${OUTPUT_FORMAT_RULE}`,
 
-  // 新闻早报：生成新闻推送的开场白
-  news_intro: `你现在要为今天的新闻早报生成一句开场白。用符合你身份的语气问候用户，并做一个今日新闻的预告，一句话即可，不要展开具体新闻内容。
-
-${OUTPUT_FORMAT_RULE}`,
-
   // 深度检索·检索词改写（纯功能场景，加进 builder.ts 的 PURE_FUNCTIONAL_SCENES；
   // 修订四新增）：searchNode 节点用。只暴露 search 一个工具——模型唯一职责是把
   // 口语化问题改写成利于搜索的检索词并以 tool_calls 输出（代码负责真正执行搜索，
