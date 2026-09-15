@@ -18,14 +18,17 @@ import { logger } from "../logger.js";
 // 重启后靠 initializeScheduler 从数据库重建。
 const activeTasks = new Map<number, CronTask>();
 
-// 会话键反解：group:<gid> → { type, openid } / c2c:<uid> → { type, openid }。
-// 前缀由本模块的 makeFakeContext 写入，这里只认这两种；不认识的前缀
-// 返回 null（显式拒绝，不兜底——与会话键的命名空间约定一致）。
+// 会话键反解：memoryKey 格式（group:<纯群openid> / c2c:<userOpenid>，恰好两段）。
+// 严格按段数校验——多一段（如历史 bug 存进去的人粒度三段键 group:<gid>:<author>）
+// 直接返回 null 跳过并告警：坏键可见，比把作者段当 openid 发给 API（11300 事故）
+// 强得多。键由 task.ts 经 memoryKey 写入。
 function parseSessionKey(
   key: string,
 ): { type: "group" | "c2c"; openid: string } | null {
-  if (key.startsWith("group:")) return { type: "group", openid: key.slice(6) };
-  if (key.startsWith("c2c:")) return { type: "c2c", openid: key.slice(4) };
+  const parts = key.split(":");
+  if (parts.length !== 2) return null;
+  if (parts[0] === "group") return { type: "group", openid: parts[1] };
+  if (parts[0] === "c2c") return { type: "c2c", openid: parts[1] };
   return null;
 }
 

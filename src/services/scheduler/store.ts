@@ -80,6 +80,24 @@ const listEnabledStmt = db.prepare(
 
 const deleteStmt = db.prepare("DELETE FROM scheduled_tasks WHERE id = ?");
 
+// ---- 一次性数据迁移（幂等）：修 v1 坏键 ----
+// v1 的任务归属键误用了人粒度 sessionKey（群聊为 group:<gid>:<author> 三段），
+// 投递目标反解时作者段被拼进了 openid 发给 API（实机 HTTP 500 / code 11300）。
+// v2 起改用会话粒度 memoryKey（两段）。启动时把遗留的三段群键砍回两段；
+// 两段键（含 c2c）不受影响，跑过的库再跑一遍也没有可改行。
+{
+  const legacyRows = db
+    .prepare(`SELECT id, session_key FROM scheduled_tasks WHERE session_key LIKE 'group:%:%'`)
+    .all() as unknown as Array<{ id: number; session_key: string }>;
+  const fixStmt = db.prepare("UPDATE scheduled_tasks SET session_key = ? WHERE id = ?");
+  for (const row of legacyRows) {
+    const parts = row.session_key.split(":");
+    if (parts.length === 3) {
+      fixStmt.run(`${parts[0]}:${parts[1]}`, row.id);
+    }
+  }
+}
+
 export function addTask(sessionKey: string, hour: number, minute: number, prompt: string): ScheduledTask {
   const result = insertStmt.run(sessionKey, hour, minute, prompt, Date.now());
   // lastInsertRowid 连接级作用域（node:sqlite），INSERT 后立刻读最可靠；
