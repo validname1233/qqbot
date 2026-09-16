@@ -1,9 +1,9 @@
 {
   "servers": {
     "kb": {
-      "url": "https://kb.example.com/mcp",
-      "apiKey": "这里填服务器的鉴权 key（内网自部署不鉴权的服务器可整行删掉）",
-      "expose": ["kb_search"]
+      "url": "http://zyh.kyson.asia:28080/rag",
+      "apiKey": "这里填端侧服务器的 Bearer key（omen6:~/MCP_RAG/.env 的 KB_BEARER_KEY）",
+      "expose": []
     },
     "home": {
       "url": "http://192.168.10.2:3001/mcp",

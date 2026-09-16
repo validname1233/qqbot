@@ -13,6 +13,7 @@ import { agentService } from "./services/agent.js";
 import { scheduledTaskService } from "./services/scheduler/task.js";
 import { setPersonalityService } from "./services/prompts/command.js";
 import { deepSearchService } from "./services/deep-search.js";
+import { knowledgeBaseService } from "./services/knowledge-base.js";
 import { helpService } from "./services/help.js";
 import { stopService } from "./services/stop.js";
 import { memoryLogObserver } from "./services/memory-log.js";
@@ -43,6 +44,9 @@ registerCommand(setPersonalityService);
 // 与 /Agent 的浅检索互补；慢（几十秒）但深。显式命令触发，设计文档见
 // docs/superpowers/specs/2026-08-24-deep-web-browsing-design.md。
 registerCommand(deepSearchService);
+// 知识库管理：直调端侧 MCP kb_issue_link 返回管理页链接（不经模型，expose 为空）。
+// 群一群一库 / 单聊一人一库；实现与设计见 docs/features/2026-09-04-知识库RAG-MCP方案.md。
+registerCommand(knowledgeBaseService);
 // 命令速查表：读 docs/features 的速查表 md 返回。未知命令的提示语会引导到这里。
 registerCommand(helpService);
 // 强制中断：拉闸当前会话正在跑的 Agent/深度检索流程（interrupt.ts 注册表）。
