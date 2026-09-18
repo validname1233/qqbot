@@ -14,6 +14,7 @@ import { openPageTool } from "../tools/open-page.js";
 import { interactPageTool } from "../tools/interact-page.js";
 import { searchTool } from "../tools/search.js";
 import { emitProgress } from "../../services/progress-bus.js";
+import { applyArgInjector } from "../tools/arg-injectors.js";
 
 const tools = new Map<string, Tool>();
 
@@ -52,7 +53,9 @@ export async function runTool(
       typeof tool.progressNote === "string" ? tool.progressNote : tool.progressNote(args),
     );
   }
-  return tool.run(args, ctx);
+  // 参数净化切面：与全局注册表同款（arg-injectors.ts 统一机制，两张表一体生效）。
+  const finalArgs = applyArgInjector(name, args, ctx);
+  return tool.run(finalArgs, ctx);
 }
 
 registerTool(openPageTool);

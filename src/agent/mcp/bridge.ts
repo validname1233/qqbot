@@ -9,37 +9,14 @@ import type { Tool } from "../tool.js";
 import type { MessageContext } from "../../types.js";
 import { callTool, type McpToolDefinition } from "./client.js";
 import { getAdapter } from "./adapters.js";
+import { stripHiddenParams } from "../tools/arg-injectors.js";
 import { logger } from "../../services/logger.js";
-import { kbScope } from "../../services/knowledge-base.js";
 
-// 前置参数注入表：key 为 "server:tool"，注入器在 callTool 之前有机会改写 args。
-// 与适配器层（后置结果加工）互补——参数层面的强制语义必须发生在调用前，
-// 适配器拿到的是结果，改 args 已经晚了。kb_search 的 scope 注入是第一个用户
-// （方案 §6.2：租户隔离靠适配器/桥接层，不靠模型传参）。
-type ArgInjector = (args: Record<string, unknown>, ctx: MessageContext) => Record<string, unknown>;
-const argInjectors = new Map<string, ArgInjector>();
-
-export function registerArgInjector(key: string, injector: ArgInjector): void {
-  argInjectors.set(key, injector);
-}
-
-function injectMcpArgs(
-  serverName: string,
-  toolName: string,
-  args: Record<string, unknown>,
-  ctx: MessageContext,
-): Record<string, unknown> {
-  const injector = argInjectors.get(`${serverName}:${toolName}`);
-  if (injector === undefined) return args;
-  return injector(args, ctx);
-}
-
-// kb:kb_search —— scope 强制注入（方案 §6.2）：模型传的 scope 一律丢弃，
-// 用当前会话事件算出的隔离键覆盖。模型只保留 query/top_k 的发言权。
-registerArgInjector("kb:kb_search", (args, ctx) => ({
-  ...args,
-  scope: kbScope(ctx.event),
-}));
+// 前置参数注入已上浮为统一机制（tools/arg-injectors.ts + 两个注册表的
+// runTool 净化切面）：key 用 MCP 包装名（mcp_<server>_<tool>），kb_search
+// 的 scope 注入器也注册在那里。本文件只保留 schema 剥离的接线——server 端
+// 声明的 inputSchema 我们改不了，包装成 Tool 时过一遍 stripHiddenParams，
+// 声明了 hideFromModel 的字段（如 scope）不进模型视野。
 
 // 拍扁层：MCP 结构化 content → 字符串（§3.3）。
 // text 块取文字拼接；image/resource 块给占位说明（本链路识图走懒加载管线，
@@ -74,14 +51,13 @@ export function wrapMcpTool(serverName: string, mcpTool: McpToolDefinition): Too
   return {
     name: `mcp_${serverName}_${mcpTool.name}`,
     description: mcpTool.description,
-    parameters: mcpTool.inputSchema,
+    parameters: stripHiddenParams(`mcp_${serverName}_${mcpTool.name}`, mcpTool.inputSchema),
 
     async run(args: Record<string, unknown>, ctx: MessageContext): Promise<string> {
       const t0 = Date.now();
-      // 前置参数注入（kb_search 的 scope 强制覆盖）：租户标识不许模型传参——
-      // 模型会瞎编/猜别人的 scope。在进 callTool 之前从当前会话事件算出并覆盖。
-      const finalArgs = injectMcpArgs(serverName, mcpTool.name, args, ctx);
-      const outcome = await callTool(serverName, mcpTool.name, finalArgs);
+      // 参数注入由注册表的 runTool 净化切面统一完成（applyArgInjector，
+      // 见 tools/arg-injectors.ts）——这里收到的 args 已是净化后的最终参数。
+      const outcome = await callTool(serverName, mcpTool.name, args);
 
       if (!outcome.ok) {
         logger.warn("mcp", `mcp_${serverName}_${mcpTool.name} 调用失败 (+${Date.now() - t0}ms): ${outcome.errorText.slice(0, 150)}`);

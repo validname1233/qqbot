@@ -5,6 +5,7 @@ import type { MessageContext } from "../types.js";
 import type { Tool } from "./tool.js";
 import type { ToolSchema } from "./types.js";
 import { emitProgress } from "../services/progress-bus.js";
+import { applyArgInjector, stripHiddenParams } from "./tools/arg-injectors.js";
 
 const tools = new Map<string, Tool>();
 
@@ -13,13 +14,16 @@ export function registerTool(tool: Tool): void {
 }
 
 // 发给模型的 tools 字段：把注册过的工具逐个转成 ToolSchema 形状。
+// parameters 过 stripHiddenParams：声明了 hideFromModel 的工具（如租户身份
+// 字段）在渲染时剔除——模型看不见的字段就不会试着填，注入器的覆盖成为
+// 双保险而不是唯一防线。
 export function toolSchemas(): ToolSchema[] {
   return [...tools.values()].map((tool) => ({
     type: "function",
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: tool.parameters,
+      parameters: stripHiddenParams(tool.name, tool.parameters),
     },
   }));
 }
@@ -53,8 +57,12 @@ export async function runTool(
       typeof tool.progressNote === "string" ? tool.progressNote : tool.progressNote(args),
     );
   }
+  // 参数净化切面（arg-injectors.ts，租户身份透传的统一机制）：命中注入表的
+  // 工具在执行前改写 args（身份字段无条件覆盖模型传参）。原生与 MCP 工具
+  // 经同一处分发，机制对两者一体生效；未注册的工具原样透传。
+  const finalArgs = applyArgInjector(name, args, ctx);
   try {
-    return await tool.run(args, ctx);
+    return await tool.run(finalArgs, ctx);
   } catch {
     return "工具执行失败";
   }
