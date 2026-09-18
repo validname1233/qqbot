@@ -3,13 +3,16 @@
 //     prepareContext —— 装配这一轮需要的上下文：取短期记忆历史、格式化当前这句话
 //                        （单聊/群聊差异只在这一步体现）、拉长期记忆文本，写进 state。
 //     llmCall       —— 带 tools 调模型，无论结果如何都原样返回，交给条件边路由。
-//     plainReply    —— llmCall 判断出"不需要工具"时走到这里：换成汐汐人设、不带 tools
-//                        再调一次，得到最终回复后直接结束（走 END）。
+//     plainReply    —— 第一步就没调工具（纯闲聊直接回答，messages 里没有任何 tool
+//                        消息）时走到这里：换成汐汐人设、不带 tools 再调一次，得到
+//                        最终回复后直接结束（走 END）。调过工具后主动停止的路径
+//                        一律走 finalize（见 afterLlmCall 的历史性判据）。
 //     tools         —— llmCall 判断出"需要工具"时走到这里：本地并发执行 tool_calls，
 //                        结果拼回 messages，turnCount+1。turnCount 还没到上限就绕回
 //                        llmCall 再来一轮，到了上限就转去 finalize。
-//     finalize      —— 轮次用完但 reply 还是空：单独拼一段「人设+需求+工具结果」的提示词，
-//                        不带聊天历史、不带 tools，逼模型只根据这些信息收尾。
+//     finalize      —— 调过工具后的统一收尾：单独拼一段「人设+需求+工具结果」的提示词，
+//                        不带聊天历史、不带 tools，逼模型只根据这些信息收尾。两种进入
+//                        路径：调完工具主动停（模型认为材料够了）/ 轮次或预算耗尽。
 //   以后想让模型连续调多轮工具，还是只改 MAX_TOOL_TURNS 这个数字，不用动图结构。
 //
 // 记忆：短期记忆（最近若干条消息）+ 长期记忆占位，单聊/群聊的差异全部收在
@@ -216,7 +219,10 @@ async function plainReply(state: AgentStateT): Promise<AgentUpdateT> {
   // 要构造的新 messages：[0] 日常对话人设的 system, [1] 长期记忆（如果有）+ history + 当前用户消息
   // 图片描述已经内联在 history / 当前消息的 content 里（prepareContext 展开过），
   // 这里不需要任何图片相关的特判——占位符"长在消息里"的方案红利。
-  const historyAndUser = state.messages.slice(1, -1); // 去掉开头的 agent_judge 和结尾的 assistant 消息
+  // slice(1,-1) 在新路由下恒切到 user 为止（本节点只会在"从未调过工具"时进入，
+  // 最后一条 assistant 是 agent_judge 的判断碎念，必须去掉）——若未来路由放宽，
+  // 这里防御性地不会把 tool 消息后的成品答案误当碎念切掉。
+  const historyAndUser = state.messages.slice(1, -1);
 
   const messages: ChatMessage[] = [{ role: "system", content: getSystemPrompt(state.ctx.event, "daily") }];
 
@@ -268,17 +274,27 @@ async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
-// 路由一：llmCall 之后——检查最后一条消息的 tool_calls：
-//   - 轮次已到上限 → finalize（兜底）
-//   - 没有 tool_calls → plainReply（换人设直接回答）
-//   - 有 tool_calls → tools（执行工具）
+// 路由一：llmCall 之后。plainReply 的唯一合法入口 = 第一步就没调过工具
+// （纯闲聊直接回答）——判据是"messages 里没有任何 tool 消息"（历史性判据），
+// 而不是"本轮输出没有 tool_calls"（瞬时判据）。两者的区别在"调完工具后主动
+// 停止"的路径：模型看完工具结果给出纯文本答案（如 recall_memory 返回 LanceDB
+// 切片后直接回答），瞬时判据会把它误送 plainReply——那里 slice(1,-1) 切掉
+// 最后一条 assistant（恰好是成品答案），且无引导重答会被 history 带偏
+// （实机事故：正确答案被切、重答跑题）。历史性判据下它走 finalize：
+// synthesizeFinalReply 显式拼工具结果 + pro 模型收尾，答案保住。
+//   - 有 tool_calls（还要调）且预算未耗尽 → tools
+//   - 其余（调过工具后主动停 / 预算耗尽）→ finalize
 function afterLlmCall(state: AgentStateT): "plainReply" | "tools" | "finalize" {
-  if (state.turnCount >= MAX_TOOL_TURNS) {
-    return "finalize";
-  }
   const lastMessage = state.messages[state.messages.length - 1];
   const toolCalls = lastMessage?.tool_calls;
-  return toolCalls === undefined || toolCalls.length === 0 ? "plainReply" : "tools";
+  const hasToolCalls = toolCalls !== undefined && toolCalls.length > 0;
+  if (hasToolCalls && state.turnCount < MAX_TOOL_TURNS) {
+    return "tools";
+  }
+  // 到这里：要么没有 tool_calls，要么预算耗尽。没有 tool 消息历史 → 从未调过
+  // 工具的纯文本输出 → plainReply；否则 finalize。
+  const usedTools = state.messages.some((msg) => msg.role === "tool");
+  return usedTools ? "finalize" : "plainReply";
 }
 
 // 路由二：tools 之后——轮次还没到上限就回 llmCall 再问模型一次，到上限就去 finalize 收尾。
