@@ -3,7 +3,7 @@
     "kb": {
       "url": "http://zyh.kyson.asia:28080/rag",
       "apiKey": "这里填端侧服务器的 Bearer key（omen6:~/MCP_RAG/.env 的 KB_BEARER_KEY）",
-      "expose": []
+      "expose": ["kb_search"]
     },
     "home": {
       "url": "http://192.168.10.2:3001/mcp",

@@ -10,6 +10,36 @@ import type { MessageContext } from "../../types.js";
 import { callTool, type McpToolDefinition } from "./client.js";
 import { getAdapter } from "./adapters.js";
 import { logger } from "../../services/logger.js";
+import { kbScope } from "../../services/knowledge-base.js";
+
+// 前置参数注入表：key 为 "server:tool"，注入器在 callTool 之前有机会改写 args。
+// 与适配器层（后置结果加工）互补——参数层面的强制语义必须发生在调用前，
+// 适配器拿到的是结果，改 args 已经晚了。kb_search 的 scope 注入是第一个用户
+// （方案 §6.2：租户隔离靠适配器/桥接层，不靠模型传参）。
+type ArgInjector = (args: Record<string, unknown>, ctx: MessageContext) => Record<string, unknown>;
+const argInjectors = new Map<string, ArgInjector>();
+
+export function registerArgInjector(key: string, injector: ArgInjector): void {
+  argInjectors.set(key, injector);
+}
+
+function injectMcpArgs(
+  serverName: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  ctx: MessageContext,
+): Record<string, unknown> {
+  const injector = argInjectors.get(`${serverName}:${toolName}`);
+  if (injector === undefined) return args;
+  return injector(args, ctx);
+}
+
+// kb:kb_search —— scope 强制注入（方案 §6.2）：模型传的 scope 一律丢弃，
+// 用当前会话事件算出的隔离键覆盖。模型只保留 query/top_k 的发言权。
+registerArgInjector("kb:kb_search", (args, ctx) => ({
+  ...args,
+  scope: kbScope(ctx.event),
+}));
 
 // 拍扁层：MCP 结构化 content → 字符串（§3.3）。
 // text 块取文字拼接；image/resource 块给占位说明（本链路识图走懒加载管线，
@@ -48,7 +78,10 @@ export function wrapMcpTool(serverName: string, mcpTool: McpToolDefinition): Too
 
     async run(args: Record<string, unknown>, ctx: MessageContext): Promise<string> {
       const t0 = Date.now();
-      const outcome = await callTool(serverName, mcpTool.name, args);
+      // 前置参数注入（kb_search 的 scope 强制覆盖）：租户标识不许模型传参——
+      // 模型会瞎编/猜别人的 scope。在进 callTool 之前从当前会话事件算出并覆盖。
+      const finalArgs = injectMcpArgs(serverName, mcpTool.name, args, ctx);
+      const outcome = await callTool(serverName, mcpTool.name, finalArgs);
 
       if (!outcome.ok) {
         logger.warn("mcp", `mcp_${serverName}_${mcpTool.name} 调用失败 (+${Date.now() - t0}ms): ${outcome.errorText.slice(0, 150)}`);
