@@ -12,6 +12,9 @@ import { getAdapter } from "./adapters.js";
 import { stripHiddenParams } from "../tools/arg-injectors.js";
 import { logger } from "../../services/logger.js";
 
+// 未配置 progressNotes 的 MCP 工具的默认进度文案（配置驱动优先，这是兜底）
+const DEFAULT_PROGRESS_NOTE = "正在调用远程工具…";
+
 // 前置参数注入已上浮为统一机制（tools/arg-injectors.ts + 两个注册表的
 // runTool 净化切面）：key 用 MCP 包装名（mcp_<server>_<tool>），kb_search
 // 的 scope 注入器也注册在那里。本文件只保留 schema 剥离的接线——server 端
@@ -43,32 +46,24 @@ export function flattenMcpResult(result: {
   return text;
 }
 
-// ---- 进度文案映射表（progress-bus 切面）----
-// key 为 MCP 包装名（mcp_<server>_<tool>），value 为该工具的进度文案；
-// 支持函数形态（拿注入后的 args 定制文案）。未登记的工具落到 DEFAULT_NOTE。
-// 新接 MCP 服务器/工具时在这里加一行即可，不需要动 wrapMcpTool。
-const PROGRESS_NOTES: Record<string, string | ((args: Record<string, unknown>) => string)> = {
-  "mcp_kb_kb_search": (args) => `正在检索知识库「${String(args.query ?? "").slice(0, 20)}」…`,
-};
-
-const DEFAULT_NOTE = "正在调用远程工具…";
-
-function progressNoteFor(wrappedName: string): Tool["progressNote"] {
-  return PROGRESS_NOTES[wrappedName] ?? DEFAULT_NOTE;
-}
-
 // 桥接核心：包装一个 MCP 工具为本地 Tool（§3.2）。
 // name 加 mcp_<server>_ 前缀防与原生工具撞名（DeepSeek 工具名字符集安全）；
 // inputSchema 与 parameters 同构直传；ctx 透传给适配器（浏览器类适配器需要
 // event 做页面池人粒度隔离——B 档演进口子）。
-export function wrapMcpTool(serverName: string, mcpTool: McpToolDefinition): Tool {
+// progressNote 来自 mcp.json 该服务器的 progressNotes 配置（工具名 → 文案，
+// 与服务器注册同源，不在代码里硬编码工具名）；未配置的工具落默认文案。
+export function wrapMcpTool(
+  serverName: string,
+  mcpTool: McpToolDefinition,
+  progressNotes?: Record<string, string>,
+): Tool {
   const wrappedName = `mcp_${serverName}_${mcpTool.name}`;
   return {
     name: wrappedName,
     description: mcpTool.description,
     parameters: stripHiddenParams(wrappedName, mcpTool.inputSchema),
-    // 进度推送切面（progress-bus）：按映射表取文案（无订阅者时 emit 是 no-op）。
-    progressNote: progressNoteFor(wrappedName),
+    // 进度推送切面（progress-bus）：按 mcp.json 配置取文案（无订阅者时 emit 是 no-op）。
+    progressNote: progressNotes?.[mcpTool.name] ?? DEFAULT_PROGRESS_NOTE,
 
     async run(args: Record<string, unknown>, ctx: MessageContext): Promise<string> {
       const t0 = Date.now();

@@ -42,6 +42,7 @@ export interface McpServerConfig {
   url: string;
   apiKey: string; // 可为空串（自部署内网服务器不鉴权）
   expose: string[]; // 该服务器放行进模型工具表的工具名，"*" = 全放行；空数组 = 全不放行（仅作远程内核直调）
+  progressNotes: Record<string, string>; // 工具名 → 进度推送文案（progress-bus）；未配置的工具用默认文案
 }
 
 // 读取并校验 mcp.json。文件不存在 = MCP 层不启用（返回空数组）；存在但解析/校验
@@ -72,7 +73,9 @@ function loadMcpConfig(): McpServerConfig[] {
     if (typeof value !== "object" || value === null) {
       throw new Error(`MCP 配置 ${path}：服务器 "${name}" 的值必须是对象`);
     }
-    const { url, apiKey, expose } = value as { url?: unknown; apiKey?: unknown; expose?: unknown };
+    const { url, apiKey, expose, progressNotes } = value as {
+      url?: unknown; apiKey?: unknown; expose?: unknown; progressNotes?: unknown;
+    };
     if (typeof url !== "string" || url.trim() === "") {
       throw new Error(`MCP 配置 ${path}：服务器 "${name}" 缺少 url`);
     }
@@ -82,11 +85,26 @@ function loadMcpConfig(): McpServerConfig[] {
     if (expose !== undefined && !Array.isArray(expose)) {
       throw new Error(`MCP 配置 ${path}：服务器 "${name}" 的 expose 必须是字符串数组（如 ["kb_search"] 或 ["*"]）`);
     }
+    // progressNotes：工具名 → 文案 的扁平对象；key 对应 tools/list 里的工具名
+    //（不带 mcp_ 前缀——前缀是 bot 侧包装规则，不进用户配置）
+    const notes: Record<string, string> = {};
+    if (progressNotes !== undefined) {
+      if (typeof progressNotes !== "object" || progressNotes === null || Array.isArray(progressNotes)) {
+        throw new Error(`MCP 配置 ${path}：服务器 "${name}" 的 progressNotes 必须是对象（形如 { "工具名": "文案" }）`);
+      }
+      for (const [tool, note] of Object.entries(progressNotes as Record<string, unknown>)) {
+        if (typeof note !== "string" || note.trim() === "") {
+          throw new Error(`MCP 配置 ${path}：服务器 "${name}" 的 progressNotes["${tool}"] 必须是非空字符串`);
+        }
+        notes[tool] = note;
+      }
+    }
     out.push({
       name,
       url: url.trim(),
       apiKey: (apiKey ?? "").trim(),
       expose: (expose as unknown[] | undefined ?? []).filter((e): e is string => typeof e === "string"),
+      progressNotes: notes,
     });
   }
   return out;

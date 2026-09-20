@@ -33,7 +33,7 @@ export async function initializeMcpTools(): Promise<void> {
           logger.debug("mcp", `工具 ${server.name}/${def.name} 未被 expose 放行，不进工具表（仍可作远程内核直调）`);
           continue;
         }
-        registerTool(wrapMcpTool(server.name, def));
+        registerTool(wrapMcpTool(server.name, def, server.progressNotes));
         absorbed++;
       }
       totalAbsorbed += absorbed;
