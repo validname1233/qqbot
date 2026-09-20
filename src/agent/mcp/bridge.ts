@@ -43,18 +43,32 @@ export function flattenMcpResult(result: {
   return text;
 }
 
+// ---- 进度文案映射表（progress-bus 切面）----
+// key 为 MCP 包装名（mcp_<server>_<tool>），value 为该工具的进度文案；
+// 支持函数形态（拿注入后的 args 定制文案）。未登记的工具落到 DEFAULT_NOTE。
+// 新接 MCP 服务器/工具时在这里加一行即可，不需要动 wrapMcpTool。
+const PROGRESS_NOTES: Record<string, string | ((args: Record<string, unknown>) => string)> = {
+  "mcp_kb_kb_search": (args) => `正在检索知识库「${String(args.query ?? "").slice(0, 20)}」…`,
+};
+
+const DEFAULT_NOTE = "正在调用远程工具…";
+
+function progressNoteFor(wrappedName: string): Tool["progressNote"] {
+  return PROGRESS_NOTES[wrappedName] ?? DEFAULT_NOTE;
+}
+
 // 桥接核心：包装一个 MCP 工具为本地 Tool（§3.2）。
 // name 加 mcp_<server>_ 前缀防与原生工具撞名（DeepSeek 工具名字符集安全）；
 // inputSchema 与 parameters 同构直传；ctx 透传给适配器（浏览器类适配器需要
 // event 做页面池人粒度隔离——B 档演进口子）。
 export function wrapMcpTool(serverName: string, mcpTool: McpToolDefinition): Tool {
+  const wrappedName = `mcp_${serverName}_${mcpTool.name}`;
   return {
-    name: `mcp_${serverName}_${mcpTool.name}`,
+    name: wrappedName,
     description: mcpTool.description,
-    parameters: stripHiddenParams(`mcp_${serverName}_${mcpTool.name}`, mcpTool.inputSchema),
-    // 进度推送切面（progress-bus）：Agent 请求期间执行到这里时，向当前会话推一条
-    // 文案。所有 MCP 工具共用这句通用文案；无订阅者时 emit 是 no-op（非请求期零影响）。
-    progressNote: "正在检索知识库…",
+    parameters: stripHiddenParams(wrappedName, mcpTool.inputSchema),
+    // 进度推送切面（progress-bus）：按映射表取文案（无订阅者时 emit 是 no-op）。
+    progressNote: progressNoteFor(wrappedName),
 
     async run(args: Record<string, unknown>, ctx: MessageContext): Promise<string> {
       const t0 = Date.now();
