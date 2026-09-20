@@ -52,6 +52,9 @@ export function wrapMcpTool(serverName: string, mcpTool: McpToolDefinition): Too
     name: `mcp_${serverName}_${mcpTool.name}`,
     description: mcpTool.description,
     parameters: stripHiddenParams(`mcp_${serverName}_${mcpTool.name}`, mcpTool.inputSchema),
+    // 进度推送切面（progress-bus）：Agent 请求期间执行到这里时，向当前会话推一条
+    // 文案。所有 MCP 工具共用这句通用文案；无订阅者时 emit 是 no-op（非请求期零影响）。
+    progressNote: "正在检索知识库…",
 
     async run(args: Record<string, unknown>, ctx: MessageContext): Promise<string> {
       const t0 = Date.now();
