@@ -11,6 +11,7 @@ import type { RawEvent } from "./events/raw.js";
 import { dispatch } from "./events/dispatcher.js";
 import { initializeScheduler } from "./services/scheduler/cron.js";
 import { initializePersonalities } from "./services/prompts/store.js";
+import { pruneOldLogs } from "./services/logger.js";
 import { initializeMcpTools } from "./agent/mcp/initialize.js";
 import { logger } from "./services/logger.js";
 
@@ -146,6 +147,10 @@ initializeScheduler();
 
 // 启动时从数据库加载所有自定义人格到内存缓存，避免运行时每次调用都查库。
 initializePersonalities();
+
+// 清理超过保留期的文件日志（LOG_RETENTION_DAYS，0=永久）。失败静默——
+// 日志清理不是启动的必要条件（见 logger.ts 的 pruneOldLogs）。
+await pruneOldLogs();
 
 // MCP 服务器吸收（设计方案 docs/features/2026-09-02-MCP接入层设计方案.md）：
 // 连不上单个服务器只记 warn 跳过，不连累启动。await 是有意的——工具吸收完再

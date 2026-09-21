@@ -6,6 +6,7 @@ import type { Tool } from "./tool.js";
 import type { ToolSchema } from "./types.js";
 import { emitProgress } from "../services/progress-bus.js";
 import { applyArgInjector, stripHiddenParams } from "./tools/arg-injectors.js";
+import { logger } from "../services/logger.js";
 
 const tools = new Map<string, Tool>();
 
@@ -62,7 +63,11 @@ export async function runTool(
   // 经同一处分发，机制对两者一体生效；未注册的工具原样透传。
   const finalArgs = applyArgInjector(name, args, ctx);
   try {
-    return await tool.run(finalArgs, ctx);
+    const result = await tool.run(finalArgs, ctx);
+    // detail 流水（只进文件）：工具结果全文不截断。打点在注册表层（与
+    // progressNote/参数净化同层）——所有原生与 MCP 工具的结果统一在此留痕。
+    logger.detail("tool", `name=${name} args=${JSON.stringify(finalArgs)}\n结果全文：${result}`);
+    return result;
   } catch {
     return "工具执行失败";
   }

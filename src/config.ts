@@ -157,6 +157,11 @@ export const config = {
   // 日志级别下限（选填）：debug / info / warn / error，默认 info。
   // debug 会打印每次 LLM 调用明细；非法值回退 info。见 services/logger.ts。
   logLevel: optionalEnv("LOG_LEVEL", "info"),
+  // 文件日志的 detail 通道开关（选填）：file（默认，LLM 输入输出/工具结果全文
+  // 落盘）/ off（回退到"只有控制台"）。见 2026-09-20-日志体系重构方案.md。
+  logDetail: optionalEnv("LOG_DETAIL", "file") === "file",
+  // 文件日志保留天数（选填）：超过的 bot-YYYY-MM-DD.log 启动时清理；0 = 永久。默认 14。
+  logRetentionDays: optionalEnvNumber("LOG_RETENTION_DAYS", 14),
   // 深度检索（/深度检索）的预算与抓取限制（选填，均有默认值）：
   //   browseMaxTurns         —— 深检图 browseLlm⇄browseTools 循环上限（日常 Agent 的
   //                             MAX_TOOL_TURNS 保持 1，互不影响）。

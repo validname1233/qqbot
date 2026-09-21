@@ -15,6 +15,7 @@ import { interactPageTool } from "../tools/interact-page.js";
 import { searchTool } from "../tools/search.js";
 import { emitProgress } from "../../services/progress-bus.js";
 import { applyArgInjector } from "../tools/arg-injectors.js";
+import { logger } from "../../services/logger.js";
 
 const tools = new Map<string, Tool>();
 
@@ -55,7 +56,10 @@ export async function runTool(
   }
   // 参数净化切面：与全局注册表同款（arg-injectors.ts 统一机制，两张表一体生效）。
   const finalArgs = applyArgInjector(name, args, ctx);
-  return tool.run(finalArgs, ctx);
+  const result = await tool.run(finalArgs, ctx);
+  // detail 流水：工具结果全文（与全局 runTool 同款打点）。
+  logger.detail("tool", `name=${name} args=${JSON.stringify(finalArgs)}\n结果全文：${result}`);
+  return result;
 }
 
 registerTool(openPageTool);
