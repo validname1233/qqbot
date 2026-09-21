@@ -49,13 +49,20 @@ export async function callModel(
   // 找最后一条 role:"user" 的消息（即这一轮真正的用户输入），日志里打出来方便排查
   // "这次调用到底是在回应哪句话"——system/history 太长，只看这一条最有用。
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
-  logger.debug(
+  // 阶段二分流：请求/返回的控制台行改为轨迹化 node（一行结论：谁发起、参数规模、
+  // 耗时），带 content 预览的旧明细沉到 detail（文件可见，控制台清爽——
+  // 2026-09-20-日志体系重构方案.md §2.2）。
+  logger.node(
     "model",
-    `[${label}] 请求大模型调用 model=${model} enableThinking=${enableThinking} tools=${tools?.length ?? 0} messages=${messages.length} userMessage=${truncateContent(lastUserMessage?.content ?? null)}`,
+    `[${label}] 调用 model=${model} tools=${tools?.length ?? 0} messages=${messages.length}`,
+  );
+  logger.detail(
+    "model",
+    `[${label}] 请求明细 model=${model} enableThinking=${enableThinking} userMessage=${truncateContent(lastUserMessage?.content ?? null)}`,
   );
   // detail 流水（只进文件日志）：完整输入 messages，提示词按内容指纹去重——
   // 人设/系统提示词/旧历史在当天文件里只出现一次全文，之后是单行引用
-  //（方案 §2.3：全量落盘会让同一段提示词一天写几百遍，没法读也没法存）。
+  //（方案 §2.3：全量落盘会使同一段提示词一天写几百遍，没法读也没法存）。
   logger.detail("model", `[${label}] 请求输入（${messages.length} 条，指纹去重）：\n${renderMessagesWithFingerprint(messages)}`);
 
   const response = await fetch(API_URL, {
@@ -79,7 +86,9 @@ export async function callModel(
 
   if (!response.ok) {
     const detail = await response.text();
-    logger.debug("model", `[${label}] 大模型调用失败 (+${elapsed}ms) status=${response.status} detail=${detail}`);
+    // 失败路径升 warn（阶段二分流遗漏的修正）：故障必须上控制台，debug 下静默
+    // 会让"模型调用失败"这一最重要的降级信号反而看不见。全文仍在 detail。
+    logger.warn("model", `[${label}] 大模型调用失败 (+${elapsed}ms) status=${response.status} detail=${detail.slice(0, 150)}`);
     logger.detail("model", `[${label}] 调用失败响应体全文：${detail}`);
     throw new Error(`AI 接口返回 ${response.status}: ${detail}`);
   }
@@ -87,18 +96,25 @@ export async function callModel(
   const data = (await response.json()) as ChatCompletionResponse;
   const message = data.choices?.[0]?.message;
   if (message === undefined) {
-    logger.debug("model", `[${label}] 大模型调用失败 (+${elapsed}ms) 返回里没有 message 字段`);
+    logger.warn("model", `[${label}] 大模型调用失败 (+${elapsed}ms) 返回里没有 message 字段`);
     throw new Error("AI 接口返回里没有 message 字段");
   }
+
+  // 轨迹行（控制台）：谁发起、耗时、产出了什么（工具名或字数）——不带正文。
+  const outcome =
+    message.tool_calls !== undefined && message.tool_calls.length > 0
+      ? `tool_calls: ${message.tool_calls.map((c) => c.function.name).join("、")}`
+      : `content ${(message.content ?? "").length} 字`;
+  logger.node("model", `[${label}] 返回 (+${elapsed}ms) → ${outcome}`);
 
   // tool_calls 只打印名字+参数（不打 id，排查时用不上，反而占地方）。
   const toolCallsSummary =
     message.tool_calls === undefined
       ? "无"
       : message.tool_calls.map((call) => `${call.function.name}(${call.function.arguments})`).join(", ");
-  logger.debug(
+  logger.detail(
     "model",
-    `[${label}] 大模型调用返回 (+${elapsed}ms) content=${truncateContent(message.content)} tool_calls=${toolCallsSummary}`,
+    `[${label}] 返回明细 (+${elapsed}ms) content=${truncateContent(message.content)} tool_calls=${toolCallsSummary}`,
   );
   // detail 流水：content 与 tool_calls 全文（不截断）——tool_calls 的 JSON 连 id
   // 一起存（回放/比对时 id 与参数同属协议内容，截断版才有"占地方"的取舍）。

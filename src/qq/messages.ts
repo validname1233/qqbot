@@ -5,6 +5,14 @@
 // 类比 todo-cli：api.ts 像通用的 fetch 封装，messages.ts 像 store.ts 里的具体业务函数。
 
 import { apiRequest } from "./api.js";
+import { logger } from "../services/logger.js";
+
+// 出站轨迹（阶段二全局日志）：每条消息实际发出后一行留痕（收/发是日志视图的
+// 两个端点，此前发送成功是静默的）。只记规模与方向，不记正文（正文在上游的
+// detail 流水里已有）。发送失败直接抛（apiRequest 的既有行为），由调用方兜。
+function traceOut(kind: string, target: string, content: string, extra = ""): void {
+  logger.node("qq", `发送 ${kind} → ${target}（${content.length} 字${extra}）`);
+}
 
 // 消息类型。0 = 纯文本；2 = Markdown。以后发图片是别的值。
 const MSG_TYPE_TEXT = 0;
@@ -31,6 +39,7 @@ export async function replyC2CMessage(
       msg_seq: msgSeq,
     }),
   });
+  traceOut("单聊回复", openid, content, ` seq=${msgSeq}`);
 }
 
 // 主动发送单聊消息（主动推送，非回复）。
@@ -51,6 +60,7 @@ export async function pushC2CMessage(
       msg_type: MSG_TYPE_TEXT,
     }),
   });
+  traceOut("单聊推送", openid, content);
 }
 
 // 主动发送群消息（主动推送，非回复）。
@@ -70,6 +80,7 @@ export async function pushGroupMessage(
       msg_type: MSG_TYPE_TEXT,
     }),
   });
+  traceOut("群推送", groupOpenid, content);
 }
 
 // 主动发送群 Markdown 消息。
@@ -89,6 +100,7 @@ export async function pushGroupMarkdown(
       },
     }),
   });
+  traceOut("群推送Markdown", groupOpenid, markdownContent);
 }
 
 // 发送群 Markdown 消息（被动回复）。
@@ -112,6 +124,7 @@ export async function replyGroupMarkdown(
       msg_seq: msgSeq,
     }),
   });
+  traceOut("群回复Markdown", groupOpenid, markdownContent, ` seq=${msgSeq}`);
 }
 
 // 发送单聊 Markdown 消息（被动回复）。结构与 replyGroupMarkdown 一致，路径不同。
@@ -134,6 +147,7 @@ export async function replyC2CMarkdown(
       msg_seq: msgSeq,
     }),
   });
+  traceOut("单聊回复Markdown", openid, markdownContent, ` seq=${msgSeq}`);
 }
 
 // 发送群消息（被动回复）。
@@ -154,4 +168,5 @@ export async function replyGroupMessage(
       msg_seq: msgSeq,
     }),
   });
+  traceOut("群回复", groupOpenid, content, ` seq=${msgSeq}`);
 }

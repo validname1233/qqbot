@@ -124,7 +124,7 @@ export async function runInteractPage(
       return formatPageForModel(extracted, finalUrl);
     });
 
-    logger.debug("browse", `interact_page(${action || "open"}) 完成 ${url} (+${Date.now() - t0}ms)`);
+    logger.node("browse", `interact_page(${action || "open"}) 完成 ${url} (+${Date.now() - t0}ms)`);
     return result;
   } catch (error) {
     // 细粒度错误文案：定位失败 vs 页面打不开，模型能据此调整（换个 target / 放弃该页）

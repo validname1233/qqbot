@@ -82,7 +82,7 @@ export function wrapMcpTool(
         { server: serverName, tool: mcpTool.name, args },
         ctx,
       );
-      logger.debug("mcp", `mcp_${serverName}_${mcpTool.name} 完成 (+${Date.now() - t0}ms) 返回 ${adapted.length} 字`);
+      logger.node("mcp", `mcp_${serverName}_${mcpTool.name} 完成 (+${Date.now() - t0}ms) 返回 ${adapted.length} 字`);
       return adapted;
     },
   };

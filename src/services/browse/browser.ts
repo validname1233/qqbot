@@ -31,7 +31,7 @@ let chain: Promise<unknown> = Promise.resolve();
 export async function withPage<T>(fn: (page: Page) => Promise<T>): Promise<T> {
   const run = chain.then(async () => {
     if (browser === null) {
-      logger.debug("browse", "browser 懒启动：launch chromium");
+      logger.node("browse", "browser 懒启动：launch chromium");
       // --disable-blink-features=AutomationControlled：去掉 navigator.webdriver
       // 自动化标记（与 UA 伪装同层，挡最便宜的第一道检测；IP 信誉问题管不着）
       browser = await chromium.launch({
@@ -57,5 +57,5 @@ export async function releaseBrowser(): Promise<void> {
   await browser?.close();
   browser = null;
   page = null;
-  logger.debug("browse", "browser 已释放（A 档：图级生命周期结束）");
+  logger.node("browse", "browser 已释放（A 档：图级生命周期结束）");
 }

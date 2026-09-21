@@ -80,12 +80,12 @@ type AgentUpdateT = typeof AgentState.Update;
 // memory/images.ts）。后面的节点只管读 state，不用各自判断"是不是群聊"。
 async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   const event = state.ctx.event;
-  // 临时计时日志：排查 prepareContext 各步耗时用，看完可删。
-  // 基准点取函数入口，每步打"累计耗时"而不是分段差值——分段差值要记上一段时间戳，
-  // 累计值一行代码就能算，且各步加起来是否等于总耗时一眼可验。
+  // 各步累计计时（轨迹日志）：基准点取函数入口，每步打"累计耗时"——累计值
+  // 一行代码就能算，且各步加起来是否等于总耗时一眼可验。识图/长期记忆召回
+  // 是这步的主要耗时来源（秒级），轨迹可见有排查价值。
   const t0 = Date.now();
   const step = (name: string, since: number): void => {
-    logger.debug("agent", `prepareContext ${name} 完成（累计 +${Date.now() - since}ms）`);
+    logger.node("agent", `prepareContext ${name} 完成（累计 +${Date.now() - since}ms）`);
   };
 
   // 当前消息：占位符拼在文字前（与 memory-log 的口径一致），再套群聊昵称前缀。
@@ -261,6 +261,8 @@ async function toolsNode(state: AgentStateT): Promise<AgentUpdateT> {
 
 // 节点三：轮次用完但 reply 还是空时的收尾。只在这一种情况下会被走到。
 async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
+  // 轨迹行：进入 finalize（调过工具后的统一收尾——主动停或预算耗尽两条路都到这）。
+  logger.node("agent", `finalize 收尾（基于 ${state.messages.filter((m) => m.role === "tool").length} 条工具结果）`);
   // messages[0] 是 system prompt，之后是历史 + 这一轮新增的——挑出 role:"tool" 的
   // 部分喂给 synthesizeFinalReply，和原来 allToolMessages 的口径一致。
   const toolResults = state.messages.filter((msg) => msg.role === "tool");
@@ -332,6 +334,8 @@ export async function runAgentTurn(
   // progressNote 的工具执行前会向该会话推送进度。订阅作用域与并发闸对齐——
   // 正常完成、/stop 中断、异常三条路径都经 finally 退订。
   const unsubscribeProgress = subscribeProgress(ctx.event);
+  const startedAt = Date.now();
+  logger.node("agent", `[/Agent] 收到（${userText.slice(0, 40)}${userText.length > 40 ? "…" : ""}）`);
 
   try {
     const key = memoryKey(ctx.event);
@@ -356,6 +360,7 @@ export async function runAgentTurn(
     }
 
     const reply = result.reply ?? "（Agent 没有返回内容）";
+    logger.node("agent", `[/Agent] 完成 → 回复 ${reply.length} 字 (+${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);
 
     // messages 里 [0] 是 system prompt，[1..history.length] 是历史，
     // 从 userMessage 开始往后的都是这一轮新增的——直接切片存进短期记忆。

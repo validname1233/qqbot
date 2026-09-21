@@ -56,8 +56,11 @@ export async function runTool(
   }
   // 参数净化切面：与全局注册表同款（arg-injectors.ts 统一机制，两张表一体生效）。
   const finalArgs = applyArgInjector(name, args, ctx);
+  // 轨迹行 + detail 流水：与全局 runTool 同款打点。
+  const t0 = Date.now();
+  const argSummary = JSON.stringify(finalArgs).slice(0, 60);
   const result = await tool.run(finalArgs, ctx);
-  // detail 流水：工具结果全文（与全局 runTool 同款打点）。
+  logger.node("tool", `→ ${name}(${argSummary}) 完成 (+${Date.now() - t0}ms, ${result.length} 字)`);
   logger.detail("tool", `name=${name} args=${JSON.stringify(finalArgs)}\n结果全文：${result}`);
   return result;
 }

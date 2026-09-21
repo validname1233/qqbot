@@ -217,9 +217,10 @@ async function searchNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   }
   if (queries.length === 0) {
     queries.push(question);
-    logger.debug("agent", `searchNode 模型未输出检索词，退回原问题直搜`);
+    logger.node("agent", "searchNode 模型未输出检索词，退回原问题直搜");
   }
-  logger.debug("agent", `searchNode 检索词改写: ${queries.join(" | ")}`);
+  // 轨迹行（控制台）：一行结论的检索词清单；多行改写细节不再上控制台。
+  logger.node("agent", `searchNode 检索词改写: ${queries.join(" | ")}`);
 
   // 第三步：并发执行（allSettled——部分失败是常态，网络抖动不该全灭）。
   const settled = await Promise.allSettled(queries.map((q) => webSearch(q)));
@@ -268,9 +269,10 @@ async function planNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   );
 
   const planText = plan.content ?? "（计划生成为空，直接开始浏览）";
-  // 链全文打 debug：计划是 chain[0]，浏览每步的思维链都有对应日志，排查
-  // 导航行为时可以完整复盘模型的思考轨迹。多行 content 原样输出不截断。
-  logger.debug("agent", `思维链[0/计划]: ${planText}`);
+  // 轨迹行（控制台）：计划生成一行结论；链全文进 detail（文件可完整复盘模型
+  // 的思考轨迹，控制台不刷屏——阶段二分流）。
+  logger.node("agent", `planNode 计划生成（${planText.length} 字）`);
+  logger.detail("agent", `思维链[0/计划]: ${planText}`);
   return { chain: [planText] };
 }
 
@@ -322,9 +324,15 @@ async function browseLlm(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   const stepNote =
     content.trim() !== "" ? content.trim() : synthesizeStepNote(response.tool_calls);
 
-  // 链全文打 debug（与 planNode 的计划日志同一口径）：第 N 步的思维链在
-  // LOG_LEVEL=debug 下完整可复盘，多行 content 原样输出。
-  logger.debug("agent", `思维链[${state.chain.length + 1}]: ${stepNote}`);
+  // 轨迹行（控制台）：本轮浏览决策的一行结论（工具名）；链全文进 detail
+  //（与 planNode 同一口径——阶段二分流）。
+  const stepNo = state.chain.length + 1;
+  if (response.tool_calls !== undefined && response.tool_calls.length > 0) {
+    logger.node("agent", `浏览第${stepNo}步 → ${response.tool_calls.map((c) => c.function.name).join("、")}`);
+  } else {
+    logger.node("agent", `浏览第${stepNo}步 → 材料小结，准备收尾`);
+  }
+  logger.detail("agent", `思维链[${stepNo}]: ${stepNote}`);
 
   return {
     messages: [{ role: "assistant", content: response.content, tool_calls: response.tool_calls }],
@@ -398,8 +406,6 @@ async function synthesize(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
     .join("\n\n");
   const chainText =
     state.chain.length > 0 ? renderChainItems(state.chain) : "（没有生成计划）";
-  // 思维链的规模日志：链断了/没累计（ReducedValue 出问题）在这里一眼可见。
-  logger.debug("agent", `synthesize 收尾：思维链 ${state.chain.length} 条（1 计划 + ${Math.max(state.chain.length - 1, 0)} 步）`);
 
   const final = await callModel(
     [
@@ -416,6 +422,11 @@ async function synthesize(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   );
 
   const report = final.content ?? "（深度检索没有生成报告）";
+  // 轨迹行（控制台）：收尾一行结论（链规模 + 报告字数）。链断没断一眼可见。
+  logger.node(
+    "agent",
+    `synthesize 报告完成（思维链 ${state.chain.length} 条，报告 ${report.length} 字）`,
+  );
   return { messages: [{ role: "assistant", content: report }], report };
 }
 
@@ -489,6 +500,8 @@ export async function runDeepSearch(
   // 的进度，都送到发起这次深检的会话。本地入口（runDeepSearchLocally）不挂订阅，
   // emit 到无订阅者是 no-op——测试输出不被推送污染。
   const unsubscribeProgress = subscribeProgress(ctx.event);
+  const startedAt = Date.now();
+  logger.node("agent", `[/深度检索] 收到（${question.slice(0, 40)}${question.length > 40 ? "…" : ""}）`);
 
   try {
     const result = await deepSearchGraph.invoke({
@@ -509,6 +522,7 @@ export async function runDeepSearch(
     }
 
     const report = result.report ?? "（深度检索没有生成报告）";
+    logger.node("agent", `[/深度检索] 完成 → 报告 ${report.length} 字 (+${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);
 
     await sqliteMemoryStore.append(
       key,

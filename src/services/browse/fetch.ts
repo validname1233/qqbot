@@ -196,7 +196,7 @@ async function fetchOnce(url: URL, originalUrl: string): Promise<OnceResult> {
       body = buffer.toString("utf-8");
     }
 
-    logger.debug("browse", `fetchPage 完成 ${originalUrl} → ${response.url} (${received}B)`);
+    logger.node("browse", `fetchPage 完成 ${originalUrl} → ${response.url} (${received}B)`);
     return { body, redirectTo: null };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {

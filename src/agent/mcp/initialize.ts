@@ -16,7 +16,7 @@ import { wrapMcpTool } from "./bridge.js";
 export async function initializeMcpTools(): Promise<void> {
   const servers = config.mcpServerConfigs;
   if (servers.length === 0) {
-    logger.debug("mcp", "未找到 mcp.json（或 servers 为空），MCP 层不启用");
+    logger.node("mcp", "未找到 mcp.json（或 servers 为空），MCP 层不启用");
     return;
   }
 
@@ -30,7 +30,7 @@ export async function initializeMcpTools(): Promise<void> {
       for (const def of tools) {
         if (def.name === "") continue;
         if (!exposed.includes("*") && !exposed.includes(def.name)) {
-          logger.debug("mcp", `工具 ${server.name}/${def.name} 未被 expose 放行，不进工具表（仍可作远程内核直调）`);
+          logger.node("mcp", `工具 ${server.name}/${def.name} 未被 expose 放行，不进工具表（仍可作远程内核直调）`);
           continue;
         }
         registerTool(wrapMcpTool(server.name, def, server.progressNotes));

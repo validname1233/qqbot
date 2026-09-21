@@ -62,13 +62,20 @@ export async function runTool(
   // 工具在执行前改写 args（身份字段无条件覆盖模型传参）。原生与 MCP 工具
   // 经同一处分发，机制对两者一体生效；未注册的工具原样透传。
   const finalArgs = applyArgInjector(name, args, ctx);
+  // 轨迹行（控制台）：工具进出的一行结论——名称 + 参数摘要（≤60 字，正文不进
+  // 控制台）。耗时以"开始→完成"计（progressNote 的推送也算在执行前，与它分工：
+  // bus 给用户推送，node 给运维留迹）。
+  const t0 = Date.now();
+  const argSummary = JSON.stringify(finalArgs).slice(0, 60);
   try {
     const result = await tool.run(finalArgs, ctx);
+    logger.node("tool", `→ ${name}(${argSummary}) 完成 (+${Date.now() - t0}ms, ${result.length} 字)`);
     // detail 流水（只进文件）：工具结果全文不截断。打点在注册表层（与
     // progressNote/参数净化同层）——所有原生与 MCP 工具的结果统一在此留痕。
     logger.detail("tool", `name=${name} args=${JSON.stringify(finalArgs)}\n结果全文：${result}`);
     return result;
   } catch {
+    logger.warn("tool", `→ ${name}(${argSummary}) 执行失败 (+${Date.now() - t0}ms)`);
     return "工具执行失败";
   }
 }

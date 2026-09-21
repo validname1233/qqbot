@@ -188,7 +188,7 @@ export async function webSearch(
   const t0 = Date.now();
   try {
     const results = await provider(query, maxResults, searchDepth);
-    logger.debug("search", `webSearch[${config.searchProvider}] "${query}" → ${results.length} 条 (+${Date.now() - t0}ms)`);
+    logger.node("search", `webSearch[${config.searchProvider}] "${query}" → ${results.length} 条 (+${Date.now() - t0}ms)`);
     return results;
   } catch (error) {
     // provider 抛错（含 !response.ok 的接口失败与网络异常）在重新抛出前统一记录：

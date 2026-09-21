@@ -71,7 +71,7 @@ export async function loadPage(url: string, event: BotEvent): Promise<string> {
   const fetched = await fetchPage(url);
   const page = extractPage(fetched.html, fetched.finalUrl);
   savePage(event, fetched.finalUrl, page);
-  logger.debug("browse", `页面加载完成 ${fetched.finalUrl} (+${Date.now() - t0}ms)`);
+  logger.node("browse", `页面加载完成 ${fetched.finalUrl} (+${Date.now() - t0}ms)`);
   return formatPageForModel(page, fetched.finalUrl);
 }
 
