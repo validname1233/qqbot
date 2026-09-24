@@ -4,15 +4,26 @@
 
 import type { CommandService } from "../../types.js";
 import { memoryKey } from "../../agent/context.js";
-import { setPersonality } from "./store.js";
+import { setPersonality, clearPersonality } from "./store.js";
 
 export const setPersonalityService: CommandService = {
   name: "set_personality",
 
   async handle(ctx) {
-    const personality = ctx.args.trim();
+    const args = ctx.args.trim();
+
+    // 子命令：清空 = 删除自定义人格，恢复默认（汐汐）。
+    if (args === "清空" || args === "重置") {
+      const removed = clearPersonality(memoryKey(ctx.event));
+      if (!removed) {
+        return "本来就没有设置过自定义人格哦～现在用的就是默认的。";
+      }
+      return "自定义人格已清空，恢复默认人设了～";
+    }
+
+    const personality = args;
     if (personality === "") {
-      return "人格描述不能为空哦～用法：/set_personality <人格描述>，例如 /set_personality 你是一个严肃的学术助手";
+      return "人格描述不能为空哦～用法：/set_personality <人格描述>，例如 /set_personality 你是一个严肃的学术助手；要恢复默认发 /set_personality 清空";
     }
 
     const key = memoryKey(ctx.event);
@@ -23,6 +34,6 @@ export const setPersonalityService: CommandService = {
       ctx.event.type === "C2C_MESSAGE_CREATE"
         ? "只在你和本鲸鱼的单聊里生效"
         : "群里的所有人都会共享这套人设";
-    return `自定义人格设置好了，${scopeHint}～以后的对话（日常聊天、Agent任务收尾、定时提醒等）都会用这套人设，工具判断逻辑不受影响。要恢复默认人设的话……呃，暂时还没做这个功能，先凑合用吧～`;
+    return `自定义人格设置好了，${scopeHint}～以后的对话（日常聊天、Agent任务收尾、定时提醒等）都会用这套人设，工具判断逻辑不受影响。想恢复默认人设的话，发 /set_personality 清空 就行～`;
   },
 };

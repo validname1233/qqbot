@@ -4,7 +4,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { setPersonalityCache } from "./builder.js";
+import { setPersonalityCache, clearPersonalityCache } from "./builder.js";
 import { logger } from "../logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -52,6 +52,14 @@ export function setPersonality(key: string, personality: string): void {
   const now = Date.now();
   upsertStmt.run(key, personality, now);
   setPersonalityCache(key, personality);
+}
+
+// 删除一条记录（恢复默认人格），并同步清缓存。没设置过时返回 false，
+// 由调用方决定要不要提示"本来就没设置"。
+export function clearPersonality(key: string): boolean {
+  const result = db.prepare("DELETE FROM group_personalities WHERE key = ?").run(key);
+  clearPersonalityCache(key);
+  return result.changes > 0;
 }
 
 // 启动时加载全部自定义人格到缓存
