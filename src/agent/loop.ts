@@ -96,7 +96,7 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   // 展开懒加载占位符：history 的 user 消息 + 当前 userMessage（/Agent 带图当轮就要看）。
   // 只展开 user 消息——assistant 回复万一复读了 "[图片:17]" 字样，不能被误替换。
   // 展开后的 history 覆盖写回 state：finalize 节点读 state.history，必须拿到展开版。
-  const expandedHistory = await expandHistoryImages(state.history);
+  const expandedHistory = dropOrphanToolHead(await expandHistoryImages(state.history));
   step("history 图片占位符展开", t0);
   const expandedUserText = await expandImagePlaceholders(formattedUserText);
   step("当前消息图片占位符展开", t0);
@@ -112,6 +112,25 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   ];
 
   return { messages: initialMessages, history: expandedHistory, longTermContext };
+}
+
+// 孤儿 tool 头部修复（2026-09-24 单聊 400 事故的修复，docs/problems 同日复盘）：
+// 热窗口按"最新 20 条"切割，而配对里 tool 消息永远比它的父 assistant(tool_calls)
+// 新——切割落进配对时，被切出窗口的永远是父，窗口头部就可能留下没有爹的孤儿
+// tool。DeepSeek 校验"tool 消息必须紧跟带 tool_calls 的 assistant"，孤儿一进
+// messages 就 400。修复 = 丢弃头部连续的孤儿（内存副本，库里原样保留——窗口
+// 滚动后边界移开，下次读出的可能又是完整配对）。
+// 只处理这一种形态：20 条窗口的切割只能制造它（悬空 assistant 需要子被挖走
+// 而父留下，反向切割，现有读写路径做不出来——为不存在的形态写分支是永远
+// 测不到的代码，真出现时其报错文案也不同，到故障源修更准）。
+function dropOrphanToolHead(history: ChatMessage[]): ChatMessage[] {
+  let i = 0;
+  while (i < history.length && history[i].role === "tool") {
+    i++;
+  }
+  if (i === 0) return history;
+  logger.warn("agent", `热窗口头部有 ${i} 条孤儿 tool 消息（父已滑出窗口），本轮已剔除`);
+  return history.slice(i);
 }
 
 // 当前消息的占位符拼接：图片在前、文字在后。逻辑与 memory-log 的
