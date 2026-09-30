@@ -36,8 +36,10 @@ export const guessMachine: StateMachine<GuessState> = {
 
     // ⚠️ 坑：Number("") === 0（不是 NaN），空串会被当成猜了 0。
     // 所以先挡空串，再用 Number.isInteger 卡住非整数/小数/NaN，状态原样不变、不计次数。
+    // passThrough（2026-09-30 群粒度回归修复）：会话键改成群粒度后整群消息都进
+    // step，非数字输入若是闲聊/其它命令就放行——不再吞掉，也不再吐槽。
     if (input === "" || !Number.isInteger(Number(input))) {
-      return { nextState: state, reply: "发一个整数来猜嘛，别的我看不懂～" };
+      return { nextState: state, reply: "", passThrough: true };
     }
 
     const n = Number(input);

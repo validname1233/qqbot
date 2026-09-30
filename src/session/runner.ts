@@ -5,14 +5,16 @@
 // 加一个新状态机 = 往 machines 数组加一项（并 import）。其余不用动。
 
 import type { MessageContext } from "../types.js";
-import type { StateMachine } from "../machines/types.js";
+import type { StateMachine, Effect } from "../machines/types.js";
 import { SessionStore } from "./store.js";
-import { sessionKey } from "./key.js";
+import { conversationKey } from "./key.js";
 import { guessMachine } from "../machines/guess.js";
+import { holdemMachine } from "../machines/holdem.js";
 
 // 所有已登记的状态机。名字（和别名，若以后加）作为开局命令关键词。
 const machines: StateMachine<unknown>[] = [
   guessMachine as StateMachine<unknown>,
+  holdemMachine as StateMachine<unknown>,
 ];
 // 命令关键词 → 状态机，开局时按 ctx.command 查。
 const byName = new Map<string, StateMachine<unknown>>();
@@ -30,27 +32,36 @@ interface ActiveSession {
 const store = new SessionStore<ActiveSession>();
 
 // 拦截结果：handled=false 表示「没接管，请继续走原路由」；
-// handled=true 表示「已接管」，reply 是要回的话（可能为空串，正常发送层会过滤）。
+// handled=true 表示「已接管」，reply 是要回的话（可能为空串，正常发送层会过滤），
+// effects 是机器声明的副作用清单（由 runCommand 统一执行，见 machines/types.ts）。
 export type SessionOutcome =
-  | { handled: true; reply: string }
+  | { handled: true; reply: string; effects?: Effect[] }
   | { handled: false };
 
 const NOT_HANDLED: SessionOutcome = { handled: false };
 
 export function runSession(ctx: MessageContext): SessionOutcome {
-  const key = sessionKey(ctx.event);
+  const key = conversationKey(ctx.event);
   const active = store.get(key);
 
   // 情况1：该会话正在某状态机中 → 交给它 step，接管这条消息。
   if (active !== undefined) {
     const { machine, state } = active;
     const t = machine.step(state, ctx);
+
+    // passThrough：机器说"这条不归我"。状态原样留在 store（局还在），
+    // 返回 NOT_HANDLED——runCommand 继续走普通命令路由：
+    // 闲聊不回、/help 照常出速查表、/Agent 照常能触发。
+    if (t.passThrough === true) {
+      return NOT_HANDLED;
+    }
+
     if (t.nextState === null) {
       store.delete(key); // 会话结束，解锁
     } else {
       store.set(key, { machine, state: t.nextState });
     }
-    return { handled: true, reply: t.reply };
+    return { handled: true, reply: t.reply, effects: t.effects };
   }
 
   // 情况2：没在会话中，但用户发了某状态机的开局命令 → 开局并锁定。

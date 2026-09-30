@@ -11,11 +11,21 @@
 
 import type { MessageContext } from "../types.js";
 
+// 机器声明、runCommand 执行的副作用（命令模式：描述与执行分离）。
+// 为什么不让 step 自己发：纯 reducer 纪律（见文件头）——扑克一步转移的产出
+// 是复合的（群里播报 + 每人一条私聊底牌），一旦 step 里直接 await 发送，
+// 两条消息并发处理会交错覆盖状态。所以 step 只产出这份清单，runCommand 统一兑现。
+export type Effect =
+  | { kind: "dm"; openid: string; text: string } // 私聊（发底牌等秘密信息）
+  | { kind: "group-push"; groupOpenid: string; text: string }; // 主动群推（超出被动回复 5 分钟窗口时的播报）
+
 // 一步转移的产物：下一个状态 + 这一步要回给用户的话。
 // 泛型 <S>：具体状态的形状由各状态机自己定义。
 export interface Transition<S> {
   nextState: S | null; // 新状态；null = 会话结束，请清除
   reply: string; // 这一步回给用户的话（开局白 / 提示 / 结算语）
+  passThrough?: boolean; // true = 这条消息不归我，放行回普通路由（状态原样保留，局继续）
+  effects?: Effect[]; // 额外副作用清单，由 runCommand 统一执行
 }
 
 export interface StateMachine<S> {
