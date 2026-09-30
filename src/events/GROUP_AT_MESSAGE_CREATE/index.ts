@@ -8,7 +8,6 @@
 import type { EventDefinition } from "../definition.js";
 import type { RawEvent } from "../raw.js";
 import { parseAttachments, type MessageAttachment } from "../attachments.js";
-import { logger } from "../../services/logger.js";
 
 // ---------- 对外提供的「干净事件」 ----------
 export interface GroupAtMessageEvent {
@@ -17,7 +16,6 @@ export interface GroupAtMessageEvent {
   attachments: MessageAttachment[]; // 消息附件（图片/语音/视频等），无附件时为空数组
   groupOpenid: string; // 哪个群，回复发到这个群
   authorOpenid: string; // 发消息的群成员 member_openid
-  authorUserOpenid: string | null; // 发送者的 user_openid（单聊场景 OpenID）。官方 User 类型声明了该字段但群事件示例未携带、是否实际填充未经真机验证——缺失为 null，调用方必须显式处理，不能假设它有值
   authorName: string; // 发消息人的昵称（author.username）
   msgId: string; // 这条消息的 id，被动回复要带上它
 }
@@ -29,7 +27,7 @@ function isGroupAtMessageData(
   id: string;
   content: string;
   group_openid: string;
-  author: { member_openid: string; username: string; user_openid?: string };
+  author: { member_openid: string; username: string };
 } {
   if (typeof d !== "object" || d === null) return false;
   const obj = d as Record<string, unknown>;
@@ -54,20 +52,12 @@ export const groupAtMessageDef: EventDefinition<GroupAtMessageEvent> = {
   t: "GROUP_AT_MESSAGE_CREATE",
   parse(raw: RawEvent): GroupAtMessageEvent | null {
     if (!isGroupAtMessageData(raw.d)) return null;
-    // author 原文进 detail 流水（日志体系设计：detail 层存原文不截断）。
-    // 这是 user_openid/member_role 是否随群事件下发的验证仪器——真机跑一次，
-    // 文件日志里即有定案证据，不再依赖文档示例的推断。
-    logger.detail("events", `GROUP_AT_MESSAGE_CREATE author 原文: ${JSON.stringify(raw.d.author)}`);
     return {
       type: "GROUP_AT_MESSAGE_CREATE",
       content: raw.d.content,
       attachments: parseAttachments(raw.d),
       groupOpenid: raw.d.group_openid,
       authorOpenid: raw.d.author.member_openid,
-      authorUserOpenid:
-        typeof raw.d.author.user_openid === "string" && raw.d.author.user_openid !== ""
-          ? raw.d.author.user_openid
-          : null,
       authorName: raw.d.author.username,
       msgId: raw.d.id,
     };

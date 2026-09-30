@@ -16,9 +16,9 @@ import { deepSearchService } from "./services/deep-search.js";
 import { knowledgeBaseService } from "./services/knowledge-base.js";
 import { helpService } from "./services/help.js";
 import { stopService } from "./services/stop.js";
-// 群→单聊通道探针：验证群事件 user_openid 是否下发、能否用它主动私发
-//（知识库权限方案"群里验身份、私聊发密码"的决策依据）。临时命令，真机定案后删除。
-import { dmProbeService } from "./services/dm-probe.js";
+// 按钮链路探针（临时）：/按钮测试——keyboard 长形式 + permission 真机实验
+//（知识库入口权限方案 Phase A）。实验结束定案后删除。
+import { buttonProbeService } from "./services/button-probe.js";
 import { memoryLogObserver } from "./services/memory-log.js";
 import { logger } from "./services/logger.js";
 import { runSession } from "./session/runner.js";
@@ -54,8 +54,8 @@ registerCommand(knowledgeBaseService);
 registerCommand(helpService);
 // 强制中断：拉闸当前会话正在跑的 Agent/深度检索流程（interrupt.ts 注册表）。
 registerCommand(stopService);
-// 群→单聊通道探针（临时）：/私聊我。
-registerCommand(dmProbeService);
+// 按钮链路探针（临时）：/按钮测试。
+registerCommand(buttonProbeService);
 
 // 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
 // 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。

@@ -127,6 +127,35 @@ export async function replyGroupMarkdown(
   traceOut("群回复Markdown", groupOpenid, markdownContent, ` seq=${msgSeq}`);
 }
 
+// 发送带按钮（keyboard）的群 Markdown 消息（被动回复）。
+// 在 replyGroupMarkdown 基础上加 keyboard 字段（按钮是 Markdown 消息的配套能力，
+// 构造见 qq/keyboard.ts）。注意与 handler 的"Markdown 失败回退纯文本"降级链的关系：
+// 本函数的调用方（如知识库管理入口）消息正文/按钮里可能携带敏感载荷（URL），
+// 降级纯文本重发会把载荷裸露——调用方必须自己 catch 并回不含载荷的文案，
+// 不能让回复落入 handler 的降级链（方案文档 §4.3 的红线）。
+export async function replyGroupMarkdownWithKeyboard(
+  groupOpenid: string,
+  markdownContent: string,
+  keyboard: { content: { rows: Array<{ buttons: unknown[] }> } },
+  msgId: string,
+  msgSeq = 1,
+): Promise<void> {
+  await apiRequest(`/v2/groups/${groupOpenid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content: "",
+      msg_type: MSG_TYPE_MARKDOWN,
+      markdown: {
+        content: markdownContent,
+      },
+      keyboard,
+      msg_id: msgId,
+      msg_seq: msgSeq,
+    }),
+  });
+  traceOut("群回复Markdown+按钮", groupOpenid, markdownContent, ` seq=${msgSeq}`);
+}
+
 // 发送单聊 Markdown 消息（被动回复）。结构与 replyGroupMarkdown 一致，路径不同。
 // 注意：单聊客户端对 Markdown 的渲染支持不如群聊稳定，调用方应做好失败回退。
 export async function replyC2CMarkdown(
