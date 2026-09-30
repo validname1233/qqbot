@@ -347,6 +347,15 @@ export function evaluateSeven(cards: Card[]): number {
   return best;
 }
 
+// 牌型大类名（scoreFive 的类别码 → 中文名）。摊牌播报用：只报大类（"四条""一对"），
+// 不展开具体牌面/kicker——类别码就在分值高位（cat << 20），右移取出查表即可，
+// 无需重算任何东西。
+const CATEGORY_LABELS = ["高牌", "一对", "两对", "三条", "顺子", "同花", "葫芦", "四条", "同花顺"] as const;
+
+export function handCategoryLabel(score: number): string {
+  return CATEGORY_LABELS[score >> 20] ?? "高牌";
+}
+
 // ---------- 摊牌结算（边池） ----------
 
 export interface PotShare {

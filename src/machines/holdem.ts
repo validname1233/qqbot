@@ -20,7 +20,7 @@ import type { StateMachine, Transition, Effect } from "./types.js";
 import type { Action, TableState } from "./holdem/engine.js";
 import {
   BIG_BLIND, START_CHIPS, MIN_PLAYERS, MAX_PLAYERS,
-  startHand, applyAction, settleShowdown,
+  startHand, applyAction, settleShowdown, evaluateSeven, handCategoryLabel,
   cardsLabel, cardLabel,
 } from "./holdem/engine.js";
 
@@ -73,7 +73,8 @@ function showdownReport(table: TableState): string {
   const alive = table.players.filter((p) => !p.folded);
   const lines: string[] = ["** showdown 摊牌 **", `公牌：${cardsLabel(table.community)}`];
   for (const p of alive) {
-    lines.push(`${p.name} 的底牌：${p.hole.map(cardLabel).join(" ")}`);
+    const score = evaluateSeven([...p.hole, ...table.community]);
+    lines.push(`${p.name} 的底牌：${p.hole.map(cardLabel).join(" ")}（${handCategoryLabel(score)}）`);
   }
   if (alive.length === 1) {
     lines.push(`其余玩家全部弃牌，${alive[0].name} 独得底池 ${table.pot}！`);

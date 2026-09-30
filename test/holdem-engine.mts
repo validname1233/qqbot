@@ -10,7 +10,7 @@ import {
   type Card, type TableState,
   shuffledDeck, cardsLabel, rankLabel,
   startHand, applyAction, advancePhase,
-  evaluateSeven, settleShowdown,
+  evaluateSeven, settleShowdown, handCategoryLabel,
 } from "../src/machines/holdem/engine.js";
 
 let passed = 0;
@@ -54,6 +54,21 @@ t("完全平牌：分值相等", () => {
   const a = [C("♠", 13), C("♥", 13), C("♦", 9), C("♣", 9), C("♠", 14), C("♥", 2), C("♦", 3)];
   const b = [C("♣", 13), C("♦", 13), C("♠", 9), C("♥", 9), C("♥", 14), C("♠", 2), C("♣", 3)];
   assert.equal(evaluateSeven(a), evaluateSeven(b));
+});
+
+t("牌型大类标注：J 四条 → 四条、A 对 → 一对、顺子/同花/高牌", () => {
+  const quadsJ = [C("♠", 11), C("♥", 11), C("♦", 11), C("♣", 11), C("♠", 5), C("♥", 9), C("♦", 2)];
+  assert.equal(handCategoryLabel(evaluateSeven(quadsJ)), "四条");
+  const pairA = [C("♠", 14), C("♥", 14), C("♦", 7), C("♣", 9), C("♠", 5), C("♥", 3), C("♦", 2)];
+  assert.equal(handCategoryLabel(evaluateSeven(pairA)), "一对");
+  const straight = [C("♠", 10), C("♥", 9), C("♦", 8), C("♣", 7), C("♠", 6), C("♥", 3), C("♦", 2)];
+  assert.equal(handCategoryLabel(evaluateSeven(straight)), "顺子");
+  const flush = [C("♠", 14), C("♠", 9), C("♠", 7), C("♠", 5), C("♠", 3), C("♥", 11), C("♦", 2)];
+  assert.equal(handCategoryLabel(evaluateSeven(flush)), "同花");
+  const high = [C("♠", 14), C("♥", 11), C("♦", 9), C("♣", 7), C("♠", 5), C("♥", 3), C("♦", 2)];
+  assert.equal(handCategoryLabel(evaluateSeven(high)), "高牌");
+  const sf = [C("♠", 10), C("♠", 11), C("♠", 12), C("♠", 13), C("♠", 14), C("♦", 2), C("♥", 7)];
+  assert.equal(handCategoryLabel(evaluateSeven(sf)), "同花顺");
 });
 
 // ---- 开局 ----
