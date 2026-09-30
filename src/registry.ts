@@ -16,6 +16,9 @@ import { deepSearchService } from "./services/deep-search.js";
 import { knowledgeBaseService } from "./services/knowledge-base.js";
 import { helpService } from "./services/help.js";
 import { stopService } from "./services/stop.js";
+// 群→单聊推送探针（临时）：/私聊我——德州扑克"群聊认人、私聊发牌"通道验证。
+// 依赖已验证事实：member_openid === user_openid。通道打通后删除。
+import { dmProbeService } from "./services/dm-probe.js";
 import { memoryLogObserver } from "./services/memory-log.js";
 import { logger } from "./services/logger.js";
 import { runSession } from "./session/runner.js";
@@ -51,6 +54,8 @@ registerCommand(knowledgeBaseService);
 registerCommand(helpService);
 // 强制中断：拉闸当前会话正在跑的 Agent/深度检索流程（interrupt.ts 注册表）。
 registerCommand(stopService);
+// 群→单聊推送探针（临时）：/私聊我。
+registerCommand(dmProbeService);
 
 // 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
 // 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。
