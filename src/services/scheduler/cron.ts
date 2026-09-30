@@ -48,6 +48,7 @@ function makeFakeContext(task: ScheduledTask): MessageContext | null {
           type: "GROUP_MESSAGE_CREATE" as const,
           groupOpenid: target.openid,
           authorOpenid: "scheduler",
+          authorUserOpenid: null, // fake 事件无真实发送者（真实群事件该字段可缺失）
           authorName: "定时任务",
           content: "",
           attachments: [],
