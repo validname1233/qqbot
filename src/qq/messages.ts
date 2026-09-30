@@ -179,6 +179,34 @@ export async function replyC2CMarkdown(
   traceOut("单聊回复Markdown", openid, markdownContent, ` seq=${msgSeq}`);
 }
 
+// 发送带按钮（keyboard）的单聊 Markdown 消息（被动回复）。
+// 单聊场景 permission 语义上可无视（消息只有收件人可见，天然只有他能点），
+// 但仍显式传 type:2——不赌省略后的默认行为（keyboard 详解文档 §5 注意事项）。
+// 与群版不同：这里没有"URL 不落文本"的红线（单聊通道私密），调用方按钮发送
+// 失败时可以安全地回退纯文本链接。
+export async function replyC2CMarkdownWithKeyboard(
+  openid: string,
+  markdownContent: string,
+  keyboard: { content: { rows: Array<{ buttons: unknown[] }> } },
+  msgId: string,
+  msgSeq = 1,
+): Promise<void> {
+  await apiRequest(`/v2/users/${openid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content: "",
+      msg_type: MSG_TYPE_MARKDOWN,
+      markdown: {
+        content: markdownContent,
+      },
+      keyboard,
+      msg_id: msgId,
+      msg_seq: msgSeq,
+    }),
+  });
+  traceOut("单聊回复Markdown+按钮", openid, markdownContent, ` seq=${msgSeq}`);
+}
+
 // 发送群消息（被动回复）。
 // groupOpenid：哪个群（来自事件的 groupOpenid）。
 // 其余参数含义同 replyC2CMessage。只是接口路径不同：群消息发到 /v2/groups/...。

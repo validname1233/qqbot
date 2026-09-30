@@ -16,6 +16,7 @@ export interface GroupMessageEvent {
   attachments: MessageAttachment[]; // 消息附件（图片/语音/视频等），无附件时为空数组
   groupOpenid: string; // 哪个群，回复发到这个群
   authorOpenid: string; // 发消息的群成员 member_openid
+  authorRole: "member" | "admin" | "owner" | null; // 群内角色（author.member_role）。缺失/非法值为 null——权限判断必须把 null 当普通成员处理（fail-closed），见知识库按钮权限方案 §3.1
   authorName: string; // 发消息人的昵称（author.username）
   msgId: string; // 这条消息的 id，被动回复要带上它
 }
@@ -27,7 +28,7 @@ function isGroupMessageData(
   id: string;
   content: string;
   group_openid: string;
-  author: { member_openid: string; username: string };
+  author: { member_openid: string; username: string; member_role?: string };
 } {
   if (typeof d !== "object" || d === null) return false;
   const obj = d as Record<string, unknown>;
@@ -58,6 +59,12 @@ export const groupMessageDef: EventDefinition<GroupMessageEvent> = {
       attachments: parseAttachments(raw.d),
       groupOpenid: raw.d.group_openid,
       authorOpenid: raw.d.author.member_openid,
+      authorRole:
+        raw.d.author.member_role === "member" ||
+        raw.d.author.member_role === "admin" ||
+        raw.d.author.member_role === "owner"
+          ? raw.d.author.member_role
+          : null,
       authorName: raw.d.author.username,
       msgId: raw.d.id,
     };
