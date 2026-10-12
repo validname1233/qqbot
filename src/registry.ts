@@ -121,15 +121,20 @@ export async function runCommand(ctx: MessageContext): Promise<string | null> {
     return session.reply;
   }
 
-  // 没带 / 命令的消息：群聊不搭话（开了全量消息后不@就回会骚扰全群，这是当年
-  // 删掉兜底 service 的原因）；单聊是私密通道，无命令的文本自动走 /Agent 链路
-  //（用户不必每次打 /Agent，像正常聊天一样说话即可）。纯图片/空文本不进——
-  // Agent 对空问题没有可执行的诉求。状态机锁定的会话不会走到这里（runSession
-  // 在上游已拦截全部消息，passThrough 放行的才会回落到本分支）。
+  // 没带 / 命令的消息的三个去处：
+  //   单聊        → 自动走 /Agent（私密通道，说话即请求）
+  //   群里 @bot   → 自动走 /Agent（GROUP_AT_MESSAGE_CREATE 只在用户显式点名时
+  //                 触发，@ 就是意图表达，语义同单聊）
+  //   群里没 @bot → 不搭话（GROUP_MESSAGE_CREATE 全量推送，普通聊天不插嘴——
+  //                 当年删兜底 service 的原因就是它）
+  // 纯图片/空文本不进（Agent 对空问题无诉求）；状态机锁定的会话不会走到这里
+  //（runSession 在上游已拦截全部消息，passThrough 放行的才会回落到本分支）。
   // 转发用的 ctx 把正文从 text 挪进 args：agentService.handle 以 args 为问题源，
   // 其余字段（event/图片处理）原样复用。
   if (ctx.command === null) {
-    if (ctx.event.type === "C2C_MESSAGE_CREATE" && ctx.text.trim() !== "") {
+    const c2c = ctx.event.type === "C2C_MESSAGE_CREATE";
+    const groupAt = ctx.event.type === "GROUP_AT_MESSAGE_CREATE";
+    if ((c2c || groupAt) && ctx.text.trim() !== "") {
       return agentService.handle({ ...ctx, command: "Agent", args: ctx.text });
     }
     return null;
