@@ -1,0 +1,1559 @@
+[
+  {
+    "id": "no-tool-001",
+    "category": "no_tool",
+    "description": "日常问候闲聊，无需任何工具",
+    "input": "在吗在吗？晚上好呀",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "纯问候寒暄，不涉及时间查询、联网信息或网页阅读，任何工具均无调用依据。"
+  },
+  {
+    "id": "no-tool-002",
+    "category": "no_tool",
+    "description": "用户倾诉心情，闲聊陪伴场景",
+    "input": "唉，今天上班好累啊，感觉整个人都不好了",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "情绪倾诉属闲聊安慰，无信息检索需求；调 search 或 get_time 均为误调。"
+  },
+  {
+    "id": "no-tool-003",
+    "category": "no_tool",
+    "description": "要求讲笑话，闲聊娱乐场景",
+    "input": "无聊死了，给我讲个笑话呗",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "讲笑话是生成能力，非实时信息；工具描述中 search 仅用于联网查最新信息，此处无依据。"
+  },
+  {
+    "id": "no-tool-004",
+    "category": "no_tool",
+    "description": "闲聊玩笑互动，测试模型不误调工具",
+    "input": "你说你是不是全知全能的？考考你，你最喜欢吃什么",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "玩笑式提问，模型应人格化回复，不应通过 search 检索「AI喜欢吃什么」之类。"
+  },
+  {
+    "id": "no-tool-005",
+    "category": "no_tool",
+    "description": "简单数学计算，模型自身可算",
+    "input": "帮我算下 37 乘 24 等于多少？",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "算术计算（37×24=888）训练数据完全覆盖，无需联网，也无时间/网页要素。"
+  },
+  {
+    "id": "no-tool-006",
+    "category": "no_tool",
+    "description": "稳定地理常识问答",
+    "input": "世界上最深的海沟是哪一个？大概有多深？",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "马里亚纳海沟属稳定地理常识，非「最新信息」，search 工具描述限定联网查最新信息，调用即误调。"
+  },
+  {
+    "id": "no-tool-007",
+    "category": "no_tool",
+    "description": "语文成语释义，稳定知识",
+    "input": "「塞翁失马」这个成语到底是什么意思啊，给孩子讲讲",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "成语释义为训练数据覆盖的稳定语文知识，无需任何工具。"
+  },
+  {
+    "id": "no-tool-008",
+    "category": "no_tool",
+    "description": "概念定义类问答，稳定知识",
+    "input": "用大白话给我解释下什么是通货膨胀？",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "经济学基础定义，属稳定常识，模型可直接作答。"
+  },
+  {
+    "id": "no-tool-009",
+    "category": "no_tool",
+    "description": "单位换算类稳定常识",
+    "input": "一英尺等于多少厘米来着？",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "固定单位换算（1英尺=30.48厘米），不随时间变化，无需联网或取时间。"
+  },
+  {
+    "id": "no-tool-010",
+    "category": "no_tool",
+    "description": "设提醒但缺时间和内容，应先澄清",
+    "input": "帮我设个提醒呗",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "既无提醒时间也无提醒内容，信息缺失应追问澄清；不得借用 get_time/search 凑数。"
+  },
+  {
+    "id": "no-tool-011",
+    "category": "no_tool",
+    "description": "要求搜索但缺主题，应先澄清",
+    "input": "帮我搜一下",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "search 的 query 为必填，用户未给任何主题，无法构造合法 query，金标为追问搜什么而非猜测调用。"
+  },
+  {
+    "id": "no-tool-012",
+    "category": "no_tool",
+    "description": "要求打开网页但未给 URL 且无历史链接，应澄清",
+    "input": "帮我打开那个网页看看里面写了啥",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "open_page 要求 url 或 link 二选一，上下文（含空 historySeed）中均无可指代对象，应澄清是哪个网页；与 open-page-006（历史含 URL）形成对照。"
+  },
+  {
+    "id": "no-tool-013",
+    "category": "no_tool",
+    "description": "要求翻译但未提供待译文本，应澄清",
+    "input": "帮我翻译一下，弄成英文的",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "缺少待翻译内容，应追问原文；不应调 search 搜索翻译。"
+  },
+  {
+    "id": "no-tool-014",
+    "category": "no_tool",
+    "description": "用户明确禁用查询，诱导不调工具的对照例",
+    "input": "这个问题你不用查网络，直接凭你知道的告诉我：光速大概有多快？",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "用户显式禁止联网，且光速（约30万公里/秒）为稳定常识，可直接回答；调 search 违背用户意图。注意：若问的是「今天星期几」则必须调 get_time，不属此类。"
+  },
+  {
+    "id": "no-tool-015",
+    "category": "no_tool",
+    "description": "用户明确禁止搜索，诱导不调工具的对照例",
+    "input": "别联网搜哈，就用你自己脑子里的知识说：珠穆朗玛峰大概多高？",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "用户显式说「别联网搜」，且海拔约8848米为稳定常识，调 search 属违背指令的误调。"
+  },
+  {
+    "id": "get-time-001",
+    "category": "get_time",
+    "description": "直接询问今天日期",
+    "input": "今天几号了？我老记不住日子",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 } ] ] },
+    "argumentRules": [ { "tool": "get_time", "field": "*", "rule": "empty_params" } ],
+    "toolResults": { "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}" },
+    "notes": "工具描述：用户问今天日期需调用 get_time；固定替身返回下应答 2026年10月12日。"
+  },
+  {
+    "id": "get-time-002",
+    "category": "get_time",
+    "description": "群聊中询问当前日期",
+    "input": "问下群友，呃我是问机器人：今天是多少号，十月过了几天了？",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 } ] ] },
+    "argumentRules": [ { "tool": "get_time", "field": "*", "rule": "empty_params" } ],
+    "toolResults": { "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}" },
+    "notes": "问具体日期必须调 get_time（无参），固定返回下应答 10月12日、十月已过12天；不应靠模型自猜日期。"
+  },
+  {
+    "id": "get-time-003",
+    "category": "get_time",
+    "description": "询问现在几点",
+    "input": "现在几点了？",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 } ] ] },
+    "argumentRules": [ { "tool": "get_time", "field": "*", "rule": "empty_params" } ],
+    "toolResults": { "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}" },
+    "notes": "「现在几点」是 get_time 描述中的典型触发句；固定返回下应答晚上9点（21:00，北京时间）。"
+  },
+  {
+    "id": "get-time-004",
+    "category": "get_time",
+    "description": "口语化询问时间并带闲聊语境",
+    "input": "几点了现在？我看看今晚还要不要熬夜",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 } ] ] },
+    "argumentRules": [ { "tool": "get_time", "field": "*", "rule": "empty_params" } ],
+    "toolResults": { "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}" },
+    "notes": "后半句闲聊不改变核心诉求为查时间；仍应单轮调用 get_time。"
+  },
+  {
+    "id": "get-time-005",
+    "category": "get_time",
+    "description": "询问今天星期几",
+    "input": "今天星期几啊？总感觉今天是周五",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 } ] ] },
+    "argumentRules": [ { "tool": "get_time", "field": "*", "rule": "empty_params" } ],
+    "toolResults": { "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}" },
+    "notes": "星期几必须基于 get_time 返回日期推算：2026-10-12 为星期一（固定约定），用户猜的周五应被纠正。"
+  },
+  {
+    "id": "get-time-006",
+    "category": "get_time",
+    "description": "询问距离未来某日期还有多久",
+    "input": "距离2027年1月1日还有多少天？",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 } ] ] },
+    "argumentRules": [ { "tool": "get_time", "field": "*", "rule": "empty_params" } ],
+    "toolResults": { "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}" },
+    "notes": "「距今多久」类问题需先取当前日期再计算；金标答案为 81 天（2026-10-12 → 2027-01-01），模型算成 80 或 82 属计算错误但工具选择正确，工具准确率判定仍通过。"
+  },
+  {
+    "id": "get-time-007",
+    "category": "get_time",
+    "description": "询问海外当地时间，get_time 无时区参数仍应无参调用后换算",
+    "input": "现在日本东京那边是几点？我想算下时差",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 } ] ] },
+    "argumentRules": [ { "tool": "get_time", "field": "*", "rule": "empty_params" } ],
+    "toolResults": { "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}" },
+    "notes": "get_time schema 无 timezone 参数，模型不得伪造时区参数（empty_params 严格校验）；东京为 UTC+9，基于返回的上海 21:00 应答东京 22:00（换算由模型完成，不涉及第二工具）。"
+  },
+  {
+    "id": "get-time-008",
+    "category": "get_time",
+    "description": "含相对时间表述的混合问句，仅凭当前时间即可回答",
+    "input": "现在是不是已经十月了？我印象里上个月还是夏天",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 } ] ] },
+    "argumentRules": [ { "tool": "get_time", "field": "*", "rule": "empty_params" } ],
+    "toolResults": { "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}" },
+    "notes": "相对时间表述「现在」需 get_time 确定日期，但问题本身（是否十月）仅凭时间即可回答，无需 search；金标为单轮 get_time，多调 search 视为过度调用。"
+  },
+  {
+    "id": "search-001",
+    "category": "search",
+    "description": "明确主题的新闻类搜索",
+    "input": "帮我搜一下嫦娥八号发射的新闻，想了解下情况",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含「嫦娥八号」以及「发射/新闻/进展」之一或语义等价词即可" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。\n3. 示例搜索结果标题三\nhttps://example.com/c\n摘要：示例摘要文本第三段。" },
+    "notes": "航天新闻属需联网的最新信息（search 工具描述：联网搜索最新信息）；用户话术无「最近/最新」等相对时间词，金标单轮 search，无需 get_time。"
+  },
+  {
+    "id": "search-002",
+    "category": "search",
+    "description": "技术类主题搜索",
+    "input": "帮我查查 Python 3.13 都有哪些新特性？",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含 Python 与 3.13 以及「新特性/更新/新功能」等语义等价词" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "版本新特性属模型训练后可能更新的技术信息，适合 search；金标不依赖真实网络内容，仅校验工具与参数。"
+  },
+  {
+    "id": "search-003",
+    "category": "search",
+    "description": "体育赛事结果搜索",
+    "input": "搜一下这届欧冠决赛最后是哪队夺冠了？",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含「欧冠/欧洲冠军联赛」与「决赛/夺冠/冠军」相关词" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "赛果是实时性信息且「这届」有歧义，联网搜索是正确路径；金标只校验 search 调用与 query 语义，答案对错不影响工具准确率判定。"
+  },
+  {
+    "id": "search-004",
+    "category": "search",
+    "description": "天气类搜索（实时信息）",
+    "input": "北京天气怎么样？帮我搜搜看",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含「北京」与「天气/天气预报」语义等价词" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "天气是典型需联网的实时信息，应调 search；用户话术未含「最近/最新/今天」等相对时间词，金标为单轮 search。审核备注：若模型先调 get_time 再 search，可视为可接受偏差但本条金标从严记单轮。"
+  },
+  {
+    "id": "search-005",
+    "category": "search",
+    "description": "用户给出明确日期范围的搜索（国庆），日期应融入 query 且无需 get_time",
+    "input": "帮我搜一下2026年国庆假期都有什么新闻",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "必须包含「2026」与「国庆/十一」相关词，且不得把相对时间词「最近」等直接当搜索词（本条日期由用户明确给出）" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "工具描述要求把具体时间范围融进搜索词；日期是用户显式给出的绝对日期（非「最近」类相对时间），因此不需要先调 get_time，多调 get_time 记为过度调用。"
+  },
+  {
+    "id": "search-006",
+    "category": "search",
+    "description": "用户给出明确历史日期的数据搜索（双十一），无需 get_time",
+    "input": "查查2025年双十一全网销售额是多少，我想写个报告引用",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "必须包含「2025」与「双十一/双11」以及「销售额/成交额/GMV」之一或等价词" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "用户给出绝对日期2025年，日期直接融入 query；数据类信息需引用来源，search 正确（open_page 描述：需要查信息来源时用 search 而非 open_page）。"
+  },
+  {
+    "id": "search-007",
+    "category": "search",
+    "description": "生活类传闻事实核查",
+    "input": "听说喝黑咖啡能减肥，是真的吗？帮我查一下",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含「咖啡」与「减肥/瘦身」相关词，可含「效果/真假」等核查类词" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "「听说……是真的吗」属需核查的不确定信息，联网核实符合 search 用途；金标不依赖真实网络内容。"
+  },
+  {
+    "id": "search-008",
+    "category": "search",
+    "description": "科技传闻事实核查",
+    "input": "网上有人说常温超导已经实现了，帮我搜下到底是不是真的",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含「常温超导/室温超导」相关词，可含「实现/真假/进展」等词" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "常温超导属争议/进展型话题，模型训练数据可能滞后，核查应联网；不依赖真实网络内容判定。"
+  },
+  {
+    "id": "search-009",
+    "category": "search",
+    "description": "英文论文标题关键词搜索",
+    "input": "帮我搜一下 attention is all you need 这篇论文讲的是什么",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "query 为英文或中英混合，必须包含英文短语 attention is all you need（大小写不敏感），可附加 paper/论文 等词" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "用户直接给出英文检索词，query 应保留英文原文（不得译成纯中文「注意力就是你所需要的一切」导致检索词失真）。"
+  },
+  {
+    "id": "search-010",
+    "category": "search",
+    "description": "用户要求用英文关键词搜索技术资料",
+    "input": "查查 react server components 怎么用，直接搜英文资料就行",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "query 为英文或中英混合，包含 react server components 英文关键词，可附 tutorial/usage 等词；纯中文翻译（如「反应服务器组件」）判不合格" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "用户显式要求英文检索，考察 query 语言选择是否符合用户意图。"
+  },
+  {
+    "id": "search-011",
+    "category": "search",
+    "description": "参数边界：用户要求多条结果，max_results 应大于默认值",
+    "input": "帮我搜一下量子计算领域的突破，多来几条结果，最好10条往上",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含「量子计算」与「突破/进展/成果」相关词" },
+      { "tool": "search", "field": "max_results", "rule": "range", "min": 6, "max": 20 },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。\n3. 示例搜索结果标题三\nhttps://example.com/c\n摘要：示例摘要文本第三段。" },
+    "notes": "考察 max_results 参数敏感性：用户「10条往上」应体现为 max_results≥6 的整数（schema 提示非必要不要设太大，上限放宽到20）；不得误改 search_depth。审核备注：完全省略该参数（默认5）可酌情放行，首选判定为 6-20 的整数。"
+  },
+  {
+    "id": "search-012",
+    "category": "search",
+    "description": "参数边界：用户要求快速随便查，search_depth 不应为 advanced",
+    "input": "帮我快速随便查一下英伟达现在的市值是多少就行，不用查太仔细",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含「英伟达/NVIDIA」与「市值/股价/估值」相关词" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "考察 search_depth 参数节制：市值属实时数据需联网，但用户强调快速随便，「现在」在本条金标中宽容处理为直接 search；advanced 一律判误（schema 明示只在 basic 不够时用）。"
+  },
+  {
+    "id": "open-page-001",
+    "category": "open_page",
+    "description": "用户给出完整 https URL 要求阅读（基础例）",
+    "input": "帮我读一下这个网页讲了啥 https://example.com/article/1",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.com/article/1" },
+      { "tool": "open_page", "field": "link", "rule": "forbidden" }
+    ],
+    "toolResults": { "open_page": "页面标题：示例页面\n正文摘要：这是示例页面的固定摘要内容，用于测试。\n页面内链接：1. https://example.com/x 2. https://example.com/y 3. https://example.com/z" },
+    "notes": "open_page 描述：用户消息含网址时用本工具；url 与 link 二选一，传 url 时不得同时传 link（同时传为错误）。"
+  },
+  {
+    "id": "open-page-002",
+    "category": "open_page",
+    "description": "用户给出 https URL 并夹带口语，仍应精确打开",
+    "input": "https://example.org/docs/guide 这个页面你打开看看， summarize 一下要点",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.org/docs/guide" },
+      { "tool": "open_page", "field": "link", "rule": "forbidden" }
+    ],
+    "toolResults": { "open_page": "页面标题：示例文档\n正文摘要：示例文档固定摘要内容。\n页面内链接：1. https://example.com/x 2. https://example.com/y" },
+    "notes": "消息中 URL 与口语混排，url 参数须逐字提取，不得补全/截断/加尾斜杠。"
+  },
+  {
+    "id": "open-page-003",
+    "category": "open_page",
+    "description": "http 协议 URL 也应原样打开",
+    "input": "打开 http://example.com/legacy/page 帮我总结下内容",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "http://example.com/legacy/page" },
+      { "tool": "open_page", "field": "link", "rule": "forbidden" }
+    ],
+    "toolResults": { "open_page": "页面标题：旧版页面\n正文摘要：旧版页面固定摘要内容。\n页面内链接：1. https://example.com/x 2. https://example.com/z" },
+    "notes": "考察模型不擅自把 http 升级为 https（逐字一致才算 exact 通过）。"
+  },
+  {
+    "id": "open-page-004",
+    "category": "open_page",
+    "description": "URL 含中文路径，须逐字一致传递",
+    "input": "看看这个页面讲的啥 https://example.com/wiki/机器学习/入门指南",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.com/wiki/机器学习/入门指南" },
+      { "tool": "open_page", "field": "link", "rule": "forbidden" }
+    ],
+    "toolResults": { "open_page": "页面标题：机器学习入门\n正文摘要：中文路径页面固定摘要。\n页面内链接：1. https://example.com/x 2. https://example.com/y 3. https://example.com/z" },
+    "notes": "中文路径必须原样传递，不做 percent-encoding。审核备注：若模型输出 URL 编码形式（%E6%9C%BA...）可标注为可接受等价形式，但自动判定脚本按 exact 严格判。"
+  },
+  {
+    "id": "open-page-005",
+    "category": "open_page",
+    "description": "URL 带查询参数与中文参数值，须逐字一致",
+    "input": "帮我打开 https://example.org/search?q=天气预报&lang=zh 看看结果",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.org/search?q=天气预报&lang=zh" },
+      { "tool": "open_page", "field": "link", "rule": "forbidden" }
+    ],
+    "toolResults": { "open_page": "页面标题：搜索结果页\n正文摘要：搜索结果页固定摘要。\n页面内链接：1. https://example.com/x 2. https://example.com/y" },
+    "notes": "查询参数顺序与内容逐字一致；不得把 q 参数内容拆出来改用 search（用户明确给了网址并要求打开，open_page 描述优先）。注意本条与「搜一下天气」类 search 用例的区分：有 URL 即 open_page。"
+  },
+  {
+    "id": "open-page-006",
+    "category": "open_page",
+    "description": "指代历史消息中的链接，应取 historySeed 中的 URL",
+    "input": "打开我上条消息发的那个链接，帮我总结下里面说了啥",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [
+      { "role": "user", "content": "https://example.com/share/abc123 这篇文章写得不错，分享给你看看" },
+      { "role": "assistant", "content": "收到，链接我记下了，需要我读的话随时说。" }
+    ],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.com/share/abc123" },
+      { "tool": "open_page", "field": "link", "rule": "forbidden" }
+    ],
+    "toolResults": { "open_page": "页面标题：分享文章\n正文摘要：分享文章固定摘要内容。\n页面内链接：1. https://example.com/x 2. https://example.com/y 3. https://example.com/z" },
+    "notes": "考察上下文指代消解：当前消息无 URL，但 historySeed 的 user 消息含唯一 URL，应代入 open_page；与 no-tool-012（无任何 URL 可指代应澄清）形成对照。"
+  },
+  {
+    "id": "open-page-007",
+    "category": "open_page",
+    "description": "对照例：用户说「搜一下」而无 URL，应为 search 而非 open_page",
+    "input": "帮我搜一下低代码平台哪个好用",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含「低代码」与「平台/好用/对比/推荐」相关词" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "open_page 描述明确：需要查找信息来源时用 search 而不是 open_page；用户无 URL 仅表述检索意图，调 open_page 属误调（无 url/link 可传，参数必然非法）。category 归入 open_page 系对照例。"
+  },
+  {
+    "id": "open-page-008",
+    "category": "open_page",
+    "description": "对照例：说「打开某网站查XX」但未给 URL，应为 search",
+    "input": "打开百度百科帮我查一下「量子纠缠」是什么意思",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "包含「量子纠缠」及「百度百科/百科/释义/是什么」等相关词；若模型直接编造百度百科 URL 传给 open_page 则判误" },
+      { "tool": "search", "field": "max_results", "rule": "optional_omitted_or_enum", "enum": [3, 5, 10] },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic"] }
+    ],
+    "toolResults": { "search": "1. 示例搜索结果标题\nhttps://example.com/a\n摘要：示例摘要文本，固定替身返回。\n2. 示例搜索结果标题二\nhttps://example.com/b\n摘要：示例摘要文本第二段。" },
+    "notes": "用户提到网站名但未给具体 URL；open_page 需要精确 url/link，凭站点名猜测构造 URL（如拼出 baike.baidu.com/item/... ）属幻觉参数，金标为 search。审核备注：若模型先 search 后基于结果 open_page 属合理延伸，但本条仅单轮判定 search。"
+  },
+  {
+    "id": "set-reminder-001",
+    "category": "set_reminder",
+    "description": "直接时长换算：十分钟后=600秒，单轮调用",
+    "input": "十分钟后提醒我去阳台把快递拿了",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 600 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "转述提醒事项，须包含『快递/拿快递』关键词，简洁自然" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：600 秒后提醒你：去阳台拿快递" },
+    "notes": "金标依据：『十分钟』直接换算 10*60=600，在 10~86400 区间内，无需 get_time；description 只需语义等价转述。"
+  },
+  {
+    "id": "set-reminder-002",
+    "category": "set_reminder",
+    "description": "直接时长换算：半小时后=1800秒",
+    "input": "半小时后提醒我把烤箱里的蛋糕取出来，不然要糊了",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 1800 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含『蛋糕』『取出/拿出来』等关键信息点" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：1800 秒后提醒你：把烤箱里的蛋糕取出来" },
+    "notes": "金标依据：『半小时』=30分钟=1800秒，口语时长直接换算。"
+  },
+  {
+    "id": "set-reminder-003",
+    "category": "set_reminder",
+    "description": "直接时长换算：两小时后=7200秒",
+    "input": "两小时后提醒我做套眼保健操，起来活动活动",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 7200 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含『眼保健操』或『活动/休息』等语义要点" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：7200 秒后提醒你：做眼保健操活动一下" },
+    "notes": "金标依据：『两小时』=2*3600=7200秒。"
+  },
+  {
+    "id": "set-reminder-004",
+    "category": "set_reminder",
+    "description": "短间隔合法值：45秒（高于下限10），精确换算",
+    "input": "45秒后提醒我看一眼手机验证码",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 45 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含『验证码』关键词" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：45 秒后提醒你：看一眼手机验证码" },
+    "notes": "审核修正：45 秒高于下限 10，属合法短间隔，直接换算 exact=45 即可（原草稿误判为低于下限）。"
+  },
+  {
+    "id": "set-reminder-005",
+    "category": "set_reminder",
+    "description": "区间上边界：24小时后=86400秒（恰好一天，合法）",
+    "input": "24小时后提醒我检查一下服务器备份有没有跑成功",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 86400 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含『服务器备份/检查备份』关键词" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：86400 秒后提醒你：检查服务器备份" },
+    "notes": "金标依据：86400 为闭区间上界，合法；『24小时』为明确时长无需 get_time。边界测试：不得误判为超限而拒设。"
+  },
+  {
+    "id": "set-reminder-006",
+    "category": "set_reminder",
+    "description": "下边界近似：『就现在』≈10秒",
+    "input": "提醒我一下，就现在，该起来喝水了",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 10 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含『喝水』关键词" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：10 秒后提醒你：起来喝水" },
+    "notes": "金标依据：『就现在』映射为最小延时 10 秒。若模型选择先向用户澄清『是否立即提醒』也可接受（paths 无法表达纯澄清分支，审核放行）。"
+  },
+  {
+    "id": "set-reminder-007",
+    "category": "set_reminder",
+    "description": "需 get_time 换算：明晚八点（固定基准下=82800秒），两轮调用",
+    "input": "明天晚上八点提醒我看演唱会直播，别忘了啊",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 }, { "tool": "set_reminder", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" },
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 82800 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含『演唱会/直播』关键词" }
+    ],
+    "toolResults": {
+      "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}",
+      "set_reminder": "提醒已设置：82800 秒后提醒你：看演唱会直播"
+    },
+    "notes": "金标依据：固定基准 2026-10-12T21:00 → 明晚 2026-10-13 20:00 = 23 小时 = 82800 秒，在 86400 内可表达。替代可接受行为：模型不调用而是向用户说明只能设 24 小时内的提醒并引导给出相对时长（澄清分支审核放行）。"
+  },
+  {
+    "id": "set-reminder-008",
+    "category": "set_reminder",
+    "description": "需 get_time 换算：今天午夜前（固定基准 21:00→24:00=10800秒）",
+    "input": "今天午夜之前提醒我把周报提交了，不然要挨批了",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 }, { "tool": "set_reminder", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" },
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 10800 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含『周报/提交』关键词" }
+    ],
+    "toolResults": {
+      "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}",
+      "set_reminder": "提醒已设置：10800 秒后提醒你：提交周报"
+    },
+    "notes": "金标依据：固定基准 2026-10-12T21:00，『今天午夜』按当日 24:00（即次日 00:00）换算 = 3 小时 = 10800 秒。『午夜前』存在歧义，模型澄清确认或按 23:59 附近（约 10730~10800）估算也可接受（审核容差），纯澄清分支 paths 不表达、notes 放行。"
+  },
+  {
+    "id": "set-reminder-009",
+    "category": "set_reminder",
+    "description": "对照：『再过一小时』为相对时长（3600秒），单轮即可、无需 get_time",
+    "input": "再过一小时提醒我给妈妈打个电话",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 3600 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含『给妈妈打电话/打电话』关键词" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：3600 秒后提醒你：给妈妈打电话" },
+    "notes": "金标依据：『再过一小时』是相对时长而非绝对时刻，直接换算 3600 即可；与 set-reminder-007/008 对照，不应多调 get_time。若模型仍先调 get_time 再换算 3600，功能等价但非最优，审核酌情放行。"
+  },
+  {
+    "id": "set-reminder-010",
+    "category": "set_reminder",
+    "description": "description 抽取：提醒内容较长需转述压缩",
+    "input": "二十分钟后提醒我给客户回电话，就是上周说要谈合作的那位张总，记得先把报价单发到他邮箱再打",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 1200 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "必含关键词：『张总』『回电话/回电』『报价单』；应为简洁转述而非整句照抄" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：1200 秒后提醒你：给张总回电话，先发报价单到邮箱" },
+    "notes": "金标依据：『二十分钟』=1200秒；description 应概括长句中的关键信息点（对象+动作+前置事项），三项信息缺一不可。"
+  },
+  {
+    "id": "set-reminder-011",
+    "category": "set_reminder",
+    "description": "description 抽取：含具体事项细节（吃药）",
+    "input": "九十分钟后提醒我吃第二板感冒药，对了吃完饭隔一会儿再吃那个胃药",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 5400 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "必含关键词：『感冒药』『胃药』；『饭后服用胃药』的细节应保留" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：5400 秒后提醒你：吃第二板感冒药，饭后隔一会儿吃胃药" },
+    "notes": "金标依据：『九十分钟』=5400秒；两种药的用药细节均需保留在 description 中，不得丢失胃药信息。"
+  },
+  {
+    "id": "set-reminder-012",
+    "category": "set_reminder",
+    "description": "对照：用户取消提醒但无已设提醒上下文，应澄清而非新设提醒",
+    "input": "算了算了，别提醒我了，我不想被打扰",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "金标依据：上下文（含 historySeed）中没有任何已设提醒，『别提醒我了』是取消意图而非设置意图；正确行为是回复当前没有已设提醒或向用户确认要取消什么。任何情况下都不得据此新设提醒。"
+  },
+  {
+    "id": "add-memory-001",
+    "category": "add_memory",
+    "description": "单聊记住事实：生日信息",
+    "input": "记住哦，我生日是农历七月十五，到时候记得祝我生日快乐呀",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "add_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "必含信息点：『生日』『农历七月十五』；不得包含『记住/记一下』等指令词本身" }
+    ],
+    "toolResults": { "add_memory": "记住了：你的生日是农历七月十五" },
+    "notes": "金标依据：用户明确说『记住』，触发 add_memory；content 为用户想记的具体内容。指令词剔除通过 semantic hint 约束（正则难覆盖变体），人工校验 content 中不得出现『记住』『帮我记』等字样。"
+  },
+  {
+    "id": "add-memory-002",
+    "category": "add_memory",
+    "description": "单聊记住事实：地址信息",
+    "input": "帮我记一下，我搬家了，新地址是幸福路88号3栋502，以后寄东西都寄这边",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "add_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "必含信息点：『幸福路88号』『3栋502』（或完整新地址表述）；不得含指令词" }
+    ],
+    "toolResults": { "add_memory": "记住了：你的新地址是幸福路88号3栋502" },
+    "notes": "金标依据：『帮我记一下』为明确记忆指令；地址要素（路名门牌+栋室号）须完整保留，不得只记『搬家了』。"
+  },
+  {
+    "id": "add-memory-003",
+    "category": "add_memory",
+    "description": "单聊记住事实：工作信息",
+    "input": "以后要记得啊，我是做游戏策划的，主要搞数值这一块",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "add_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "必含信息点：『游戏策划』『数值』；不得含指令词" }
+    ],
+    "toolResults": { "add_memory": "记住了：你是游戏策划，主要做数值方向" },
+    "notes": "金标依据：『以后要记得』属于明确记忆指令；职业+细分方向两个信息点均需保留。"
+  },
+  {
+    "id": "add-memory-004",
+    "category": "add_memory",
+    "description": "单聊记住事实：喜好",
+    "input": "偷偷跟你说，记住了我最喜欢的歌手是周杰伦，等他开演唱会我找你抢票",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "add_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "必含信息点：『最喜欢』『周杰伦』；不得含指令词" }
+    ],
+    "toolResults": { "add_memory": "记住了：你最喜欢的歌手是周杰伦" },
+    "notes": "金标依据：『记住了我最喜欢的…』为明确记忆指令；句子中夹杂抢票闲聊，content 只应记喜好本身。"
+  },
+  {
+    "id": "add-memory-005",
+    "category": "add_memory",
+    "description": "群聊：值得全群共享的事实（集体活动安排）",
+    "input": "大家记住哈，这周五晚上八点老时间开黑打副本，别迟到",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "add_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "必含信息点：『周五/这周五』『晚上八点』『打副本/开黑』；不得含指令词" }
+    ],
+    "toolResults": { "add_memory": "记住了：这周五晚上八点开黑打副本" },
+    "notes": "金标依据：群聊记忆全群共享，集体活动安排是典型值得共享的群事实，且用户明确说『大家记住』，应直接调用。"
+  },
+  {
+    "id": "add-memory-006",
+    "category": "add_memory",
+    "description": "群聊：私人信息入群记忆，金标允许直接调用但先确认更优",
+    "input": "帮我记一下，我家wifi密码是88888888，省得我老忘",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "add_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "必含信息点：『wifi/WiFi』『密码』『88888888』；不得含指令词" }
+    ],
+    "toolResults": { "add_memory": "记住了：你家 wifi 密码是 88888888" },
+    "notes": "金标依据：用户有明确记忆指令，直接调用可接受，故 shouldCallTools=true。但群聊记忆全群共享，私人密码类信息更优行为是先向用户确认『这条会全群可见，确定要记吗』——先确认再调用的分支 paths 无法表达，审核放行；两种行为均不算错。"
+  },
+  {
+    "id": "add-memory-007",
+    "category": "add_memory",
+    "description": "多信息点一次记住：content 需概括全部信息",
+    "input": "帮我记一下这几件事：我每天坐地铁5号线上下班，工牌号是A1024，午饭一般12点吃",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "add_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "必含全部信息点：『地铁5号线』『工牌号A1024』『午饭12点』；三项缺一不可，不得含指令词" }
+    ],
+    "toolResults": { "add_memory": "记住了：你坐地铁5号线上下班，工牌号A1024，午饭一般12点吃" },
+    "notes": "金标依据：一次明确的多信息记忆请求；content 应概括全部三个信息点，丢失任一项判不合格。"
+  },
+  {
+    "id": "add-memory-008",
+    "category": "add_memory",
+    "description": "对照：仅闲聊提及信息、无记忆指令，不应调用",
+    "input": "唉，我今天去了趟医院，人贼多，排了俩小时队",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "金标依据：用户只是分享日常、未表达『记住/记一下』等记忆意图，调用 add_memory 属过度主动；正确行为是共情闲聊回应。"
+  },
+  {
+    "id": "delete-memory-001",
+    "category": "delete_memory",
+    "description": "明确单条删除：historySeed 提供已有记忆线索",
+    "input": "把我家猫名字那条记忆删了吧，它改名了",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [
+      { "role": "user", "content": "记住我家猫叫年糕，特别能吃" },
+      { "role": "assistant", "content": "好嘞，记住了，年糕是个小吃货～" }
+    ],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "delete_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "delete_memory", "field": "query", "rule": "semantic", "hint": "应包含『猫』『年糕/猫名字』等自然语言描述，而非任何 id" }
+    ],
+    "toolResults": { "delete_memory": "已经把这条记忆删掉了～" },
+    "notes": "金标依据：明确的单条删除意图，且 historySeed 给出记忆内容线索；query 是对目标记忆的自然语言描述，不得编造 id。"
+  },
+  {
+    "id": "delete-memory-002",
+    "category": "delete_memory",
+    "description": "明确单条删除：删除口味偏好记忆（话术自带线索）",
+    "input": "忘掉我说过不喜欢吃辣那回事吧，我最近迷上川菜了",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "delete_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "delete_memory", "field": "query", "rule": "semantic", "hint": "应包含『吃辣/不喜欢吃辣』相关描述" }
+    ],
+    "toolResults": { "delete_memory": "已经把这条记忆删掉了～" },
+    "notes": "金标依据：『忘掉…』为明确删除指令，目标记忆内容在话术中自描述；query 应指向口味偏好而非川菜。"
+  },
+  {
+    "id": "delete-memory-003",
+    "category": "delete_memory",
+    "description": "明确单条删除：删除工作相关记忆",
+    "input": "删除关于我前公司的那段记忆吧，不想再留着了",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "delete_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "delete_memory", "field": "query", "rule": "semantic", "hint": "应包含『前公司/以前公司/工作单位』相关描述" }
+    ],
+    "toolResults": { "delete_memory": "已经把这条记忆删掉了～" },
+    "notes": "金标依据：『删除关于…的记忆』为标准删除话术；『前公司』是主题级描述，query 语义等价即可。"
+  },
+  {
+    "id": "delete-memory-004",
+    "category": "delete_memory",
+    "description": "模糊描述删除：目标记忆指代不精确",
+    "input": "就……你之前帮我记过一条关于周末计划的，把那条删了呗，具体我也记不清了",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "delete_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "delete_memory", "field": "query", "rule": "semantic", "hint": "应包含『周末计划/周末安排』相关模糊描述，允许带上用户的不确定语气" }
+    ],
+    "toolResults": { "delete_memory": "已经把这条记忆删掉了～" },
+    "notes": "金标依据：虽然描述模糊，但删除意图明确且给出了主题词，应调用 delete_memory 交由检索匹配，而不是反问到底删哪条（反问澄清也可接受，审核放行）。"
+  },
+  {
+    "id": "delete-memory-005",
+    "category": "delete_memory",
+    "description": "对照：无删除意图，是回忆询问，应走 recall 而非 delete",
+    "input": "你还记得我喜欢什么吗？考考你",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "recall_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "recall_memory", "field": "keywords", "rule": "type", "hint": "字符串数组，长度 1~5" },
+      { "tool": "recall_memory", "field": "keywords", "rule": "semantic", "hint": "可接受关键词如『喜欢』『喜好』『喜欢什么』等用户原词或其直接同义词" }
+    ],
+    "toolResults": { "recall_memory": "在最近 300 条记忆中检索\"喜欢\"，命中 1 处：\n── 第 1 处 ──\nuser：我超喜欢蓝色，衣服基本都是蓝色的" },
+    "notes": "金标依据：这是回忆询问（『记得吗』）而非删除意图，绝不应对话术中的『记得』字样误判为 delete_memory；当前上下文无答案，金标为 recall_memory。若模型基于已注入的长期记忆直接回答而不再检索，也可接受（审核放行）。"
+  },
+  {
+    "id": "delete-memory-006",
+    "category": "delete_memory",
+    "description": "对照：删除不存在的记忆，替身返回未命中，金标仍应调用",
+    "input": "把我让你记过的那条『我会开飞机』的记忆删了吧",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "delete_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "delete_memory", "field": "query", "rule": "semantic", "hint": "应包含『开飞机/会开飞机』相关描述" }
+    ],
+    "toolResults": { "delete_memory": "没找到匹配的记忆" },
+    "notes": "金标依据：用户删除意图明确，无论目标记忆是否存在都应发起调用，由工具返回未命中；模型不得凭自身判断『没有这条记忆』而拒绝调用。替身固定返回『没找到匹配的记忆』以检验模型对未命中结果的自然告知。"
+  },
+  {
+    "id": "clear-all-001",
+    "category": "clear_all_memories",
+    "description": "明确全量删除：『删除所有记忆』",
+    "input": "把我的所有记忆都删了吧，我想重新开始",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "clear_all_memories", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "clear_all_memories", "field": "*", "rule": "empty_params" }
+    ],
+    "toolResults": { "clear_all_memories": "好的，已经把所有 3 条长期记忆都删掉了～" },
+    "notes": "金标依据：『所有…都删了』是明确的全量删除意图，满足 clear_all_memories 的触发条件；该工具无参数，不得生成任何字段。"
+  },
+  {
+    "id": "clear-all-002",
+    "category": "clear_all_memories",
+    "description": "明确全量删除：『清空全部』",
+    "input": "清空全部记忆，一条都别给我留",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "clear_all_memories", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "clear_all_memories", "field": "*", "rule": "empty_params" }
+    ],
+    "toolResults": { "clear_all_memories": "好的，已经把所有 3 条长期记忆都删掉了～" },
+    "notes": "金标依据：『清空全部』+『一条都别留』双重强调全量意图，指向 clear_all_memories 而非逐条 delete_memory。"
+  },
+  {
+    "id": "clear-all-003",
+    "category": "clear_all_memories",
+    "description": "明确全量删除：『把记忆都删了』（口语化表达）",
+    "input": "我不想让你记任何东西了，把你那边记的都删了吧",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "clear_all_memories", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "clear_all_memories", "field": "*", "rule": "empty_params" }
+    ],
+    "toolResults": { "clear_all_memories": "好的，已经把所有 3 条长期记忆都删掉了～" },
+    "notes": "金标依据：『记的都删了』中『都』表达全量范围；虽然句首夹带情绪性表述，但全删意图清晰。危险操作，若模型先二次确认再调用也可接受（审核按首工具调用轮次对齐）。"
+  },
+  {
+    "id": "clear-all-004",
+    "category": "clear_all_memories",
+    "description": "对照：单条删除意图不得触发全量清空",
+    "input": "只把关于我生日的那条记忆删了，其他都留着啊",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "delete_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "delete_memory", "field": "query", "rule": "semantic", "hint": "应包含『生日』相关描述" },
+      { "tool": "clear_all_memories", "field": "*", "rule": "forbidden", "hint": "单条删除意图下严禁调用全量清空" }
+    ],
+    "toolResults": { "delete_memory": "已经把这条记忆删掉了～" },
+    "notes": "金标依据：用户明确限定『只删一条、其他留着』，『其他都留着』反向强调非全量；必须走 delete_memory，误调 clear_all_memories 判为严重错误（不可逆危险操作）。argumentRules 中对 clear_all_memories 用 forbidden 显式约束。"
+  },
+  {
+    "id": "clear-all-005",
+    "category": "clear_all_memories",
+    "description": "对照：『整理记忆』不是删除意图，不应调用",
+    "input": "你帮我整理一下记忆呗，感觉你记的东西有点乱",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "allowNoTool": true, "paths": [ [ { "tool": "clear_all_memories", "round": 1 } ] ] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "金标依据：『整理』是组织/梳理诉求，不构成删除或全量清空意图；正确行为是说明暂不支持整理，或结合 recall_memory 了解现状后建议手动删除，但绝不得调用 clear_all_memories 或无目标的 delete_memory。评测隔离环境下首选金标为不调用工具（allowNoTool=true，长期记忆未注入、直接说明最合理）；走 recall_memory 检索也放行（审核口径）。生成 clear_all_memories 或 delete_memory 才判错。"
+  },
+  {
+    "id": "recall-memory-001",
+    "category": "recall_memory",
+    "description": "上次聊过的话题：凭特征描述找回电影名",
+    "input": "上次我们聊的那个电影叫啥来着？就是蓝色皮肤外星人那个",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "recall_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "recall_memory", "field": "keywords", "rule": "type", "hint": "字符串数组，长度 1~5" },
+      { "tool": "recall_memory", "field": "keywords", "rule": "semantic", "hint": "应使用对话原词或直接同义词，可接受集合：『电影』『阿凡达』『外星人』中至少含『电影』与『阿凡达/外星人』之一" }
+    ],
+    "toolResults": { "recall_memory": "在最近 300 条记忆中检索\"阿凡达\"，命中 1 处：\n── 第 1 处 ──\nuser：上次看的阿凡达真不错" },
+    "notes": "金标依据：用户提及之前聊过的内容且当前上下文为空，触发 recall_memory；keywords 强调用当时对话里最可能出现的原词（如片名『阿凡达』），而非模型自己的转述（如『科幻片推荐』判弱合格）。"
+  },
+  {
+    "id": "recall-memory-002",
+    "category": "recall_memory",
+    "description": "上次聊过的话题：找回考试/证书相关讨论",
+    "input": "我之前是不是跟你说过我要考证书的事？帮我翻翻聊天记录",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "recall_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "recall_memory", "field": "keywords", "rule": "type", "hint": "字符串数组，长度 1~5" },
+      { "tool": "recall_memory", "field": "keywords", "rule": "semantic", "hint": "可接受关键词集合：『考证书』『证书』『考试』『考证』等原词或直接同义词" }
+    ],
+    "toolResults": { "recall_memory": "在最近 300 条记忆中检索\"考证书\"，命中 1 处：\n── 第 1 处 ──\nuser：打算今年把教师资格证考下来" },
+    "notes": "金标依据：『之前说过…帮我翻翻』是典型的历史对话检索请求；keywords 取用户原词『考证书/证书』优于抽象词『学习计划』。"
+  },
+  {
+    "id": "recall-memory-003",
+    "category": "recall_memory",
+    "description": "上次聊过的话题：找回机器人此前推荐的店铺",
+    "input": "上次你给我推荐的那个店叫什么名字来着？就那家吃烤肉的",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "recall_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "recall_memory", "field": "keywords", "rule": "type", "hint": "字符串数组，长度 1~5" },
+      { "tool": "recall_memory", "field": "keywords", "rule": "semantic", "hint": "可接受关键词集合：『推荐』『店』『烤肉』等原词或直接同义词（如『餐厅』）" }
+    ],
+    "toolResults": { "recall_memory": "在最近 300 条记忆中检索\"推荐 烤肉\"，命中 1 处：\n── 第 1 处 ──\nassistant：推荐你去试试炭火故事，他家烤肉性价比很高" },
+    "notes": "金标依据：用户指向机器人自己上次的推荐内容，当前上下文没有，需检索历史对话；keywords 应组合『推荐/烤肉』等原词提高命中率。"
+  },
+  {
+    "id": "recall-memory-004",
+    "category": "recall_memory",
+    "description": "多关键词/同义词：旅游计划话题",
+    "input": "还记得咱上次聊的旅游计划不？就那个说要去云南看雪的还是啥来着",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "recall_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "recall_memory", "field": "keywords", "rule": "type", "hint": "字符串数组，长度 1~5" },
+      { "tool": "recall_memory", "field": "keywords", "rule": "semantic", "hint": "应包含多个互补关键词：『旅游/旅行/计划』与『云南』及『雪』相关原词，如 [\"旅游\",\"云南\",\"看雪\"]；同义替换（旅行/出游）可接受" }
+    ],
+    "toolResults": { "recall_memory": "在最近 300 条记忆中检索\"云南 旅游\"，命中 1 处：\n── 第 1 处 ──\nuser：明年一月想去的云南，听说玉龙雪山特别美" },
+    "notes": "金标依据：话题跨多个概念（旅游+目的地+事件），考察 keywords 传多词（1~5 内）及同义词能力；只传单一泛化词如『玩』判弱合格。"
+  },
+  {
+    "id": "recall-memory-005",
+    "category": "recall_memory",
+    "description": "对照：答案已在当前上下文中，无需召回",
+    "input": "哎对了，刚才说的团建到底是去哪儿来着？",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [
+      { "role": "user", "content": "跟你说，我们公司下周团建去杭州，两天一夜" },
+      { "role": "assistant", "content": "杭州团建听起来很棒！是去西湖那边吗？" }
+    ],
+    "expected": { "shouldCallTools": false, "paths": [] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "金标依据：historySeed 中已明确包含答案（杭州），recall_memory 是原始对话流水检索，用于当前上下文缺失的信息；对刚说过的话应直接回答。多余地调用 recall_memory 判为效率性错误（不算功能错误，审核记录）。"
+  },
+  {
+    "id": "recall-memory-006",
+    "category": "recall_memory",
+    "description": "对照：询问已存为长期记忆的事实，不应走对话流水检索",
+    "input": "我之前让你记住的我生日是哪天来着？",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "allowNoTool": true, "paths": [ [ { "tool": "recall_memory", "round": 1 } ] ] },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "金标依据：生日已通过 add_memory 存为长期记忆并随会话自动注入，模型应基于注入的长期记忆直接回答（农历七月十五，见 add-memory-001 同构场景）；recall_memory 面向原始对话流水检索。评测隔离环境下长期记忆未注入，直接回答（不调工具）与降级调用 recall_memory 检索『生日』均可接受（allowNoTool=true）；但调 add_memory/delete_memory 等其他工具判错。"
+  },
+  {
+    "id": "multi-tool-001",
+    "category": "multi_tool",
+    "description": "同一轮并发设置提醒并写入记忆（set_reminder+add_memory），验证无依赖双工具并发与参数拆分",
+    "input": "十分钟后提醒我给妈妈回电话，对了顺便帮我记一下，下周三我得陪她去医院复查。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [
+      [ { "tool": "set_reminder", "round": 1 }, { "tool": "add_memory", "round": 1 } ],
+      [ { "tool": "set_reminder", "round": 1 }, { "tool": "add_memory", "round": 2 } ],
+      [ { "tool": "add_memory", "round": 1 }, { "tool": "set_reminder", "round": 2 } ]
+    ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 600 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "包含给妈妈回电话这一事项，如「给妈妈回电话」" },
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "包含「下周三」与「陪妈妈去医院复查」相关的信息" }
+    ],
+    "toolResults": {
+      "set_reminder": "提醒已设置：600 秒后提醒您给妈妈回电话。",
+      "add_memory": "已记住：下周三要陪妈妈去医院复查。"
+    },
+    "notes": "「十分钟后」基于固定基准 2026-10-12T21:00，seconds=600 为时长直译不依赖 get_time。三条 path 任一命中即通过：Runtime 不强制同轮，同轮并发（path1）或拆成两轮（path2/path3）均可接受；漏调任一工具或多出第三次调用均判错。"
+  },
+  {
+    "id": "multi-tool-002",
+    "category": "multi_tool",
+    "description": "查当前时间与搜索天气为无依赖组合，同轮并发 get_time+search，search 的 query 允许不含具体日期",
+    "input": "现在几点了？顺便帮我搜下今天北京天气怎么样。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [
+      [ { "tool": "get_time", "round": 1 }, { "tool": "search", "round": 1 } ],
+      [ { "tool": "get_time", "round": 1 }, { "tool": "search", "round": 2 } ]
+    ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" },
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "与北京天气相关，须含「北京」与「天气」等词；是否包含具体日期（如 2026-10-12）均可接受，不作强制" }
+    ],
+    "toolResults": {
+      "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}",
+      "search": "搜索结果（替身）：北京今日（10月12日）晴，气温 12~22℃，北风 3 级，适宜出行。"
+    },
+    "notes": "两任务无数据依赖（search 不需要 get_time 的结果即可发起），同轮并发（path1）或拆两轮（path2）均可接受。query 金标写宽：因 search 可先并发发出，含不含具体日期都算对，但缺「北京」或「天气」关键语义则判错。"
+  },
+  {
+    "id": "multi-tool-003",
+    "category": "multi_tool",
+    "description": "两个独立搜索主题可同轮并发两次 search，也允许合并为一次更泛的 search",
+    "input": "帮我查查最近有什么好看的新电影，再查查周末带娃去哪儿玩比较好。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [
+      [ { "tool": "search", "round": 1 }, { "tool": "search", "round": 1 } ],
+      [ { "tool": "search", "round": 1 } ]
+    ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "若两次调用（path1）：一次须与新电影/热映电影相关，另一次须与周末亲子出游/遛娃去处相关；若只调用一次（path2）：query 需泛化覆盖两主题，如「周末 新电影 亲子出游 推荐」，只覆盖单一主题判错" }
+    ],
+    "toolResults": { "search": "搜索结果（替身）：1. 本周热映新片口碑榜 2. 周末亲子出游好去处top10 3. 相关攻略合集。" },
+    "notes": "可接受集合：path1（同轮两次 search，query 分别对应电影与周末带娃出游；串行两轮各搜一次也视为与 path1 等价可接受，Runtime 同轮不强制）或 path2（只发一次 search，query 泛化同时涵盖两个主题）。path2 的 query 若只写了电影或只写了带娃则不匹配任一 path，判错。"
+  },
+  {
+    "id": "multi-tool-004",
+    "category": "multi_tool",
+    "description": "打开指定页面并同时把页面要点记入记忆（open_page+add_memory）",
+    "input": "帮我打开 https://example.com/article/ai-summary 这个文章看看，顺便把里面讲的要点帮我记下来。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [
+      [ { "tool": "open_page", "round": 1 }, { "tool": "add_memory", "round": 1 } ],
+      [ { "tool": "open_page", "round": 1 }, { "tool": "add_memory", "round": 2 } ]
+    ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.com/article/ai-summary" },
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "并发（path1）时可为「记住 https://example.com/article/ai-summary 文章要点」类内容；串行（path2）时应包含替身摘要中的要点关键词，如「AI 绘图」「用户翻倍」「本地化小模型」" }
+    ],
+    "toolResults": {
+      "open_page": "页面标题：AI 绘图年度趋势。摘要：①生成式 AI 绘图用户数翻倍；②商用版权规则逐步明确；③本地化小模型兴起。页面内链接：1. https://example.com/article/ai-summary/data",
+      "add_memory": "已记住：AI 绘图文章要点（用户翻倍、版权明确、本地小模型兴起）。"
+    },
+    "notes": "同轮并发（path1，add_memory 记 URL 与「要点」意图）或先读后记（path2，add_memory 融入替身返回的要点）均可接受。url 必须精确等于用户给出的地址。"
+  },
+  {
+    "id": "multi-tool-005",
+    "category": "multi_tool",
+    "description": "漏调对照：用户列三件事但第三件缺关键信息，金标只调两个工具，多余第三个调用判错",
+    "input": "帮个忙呗：第一，帮我搜搜高铁退票手续费是怎么收的；第二，记一下我下周四要去上海出差；第三，把我表弟的电话号码也记下来。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [
+      [ { "tool": "search", "round": 1 }, { "tool": "add_memory", "round": 1 } ],
+      [ { "tool": "search", "round": 1 }, { "tool": "add_memory", "round": 2 } ]
+    ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "须含「高铁」与「退票」（手续费）相关词" },
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "须包含「下周四」与「上海出差」相关信息，不得包含表弟电话相关内容" }
+    ],
+    "toolResults": {
+      "search": "搜索结果（替身）：高铁退票手续费按开车前时间梯次收取，48小时以上5%、24-48小时10%、24小时内20%。",
+      "add_memory": "已记住：下周四要去上海出差。"
+    },
+    "notes": "第三件事（记表弟电话）用户未提供号码本身，信息缺失不可执行：模型追问或忽略均可，但不得为它发起任何工具调用（尤其禁止带空/编造号码的 add_memory）。金标恰好两工具：search（高铁退票）+ add_memory（下周四上海出差），并发或拆两轮均可。"
+  },
+  {
+    "id": "multi-tool-006",
+    "category": "multi_tool",
+    "description": "多调对照：话术啰嗦但需求单一，只允许恰好一次 search，任何额外调用判错",
+    "input": "哎我就是想麻烦你一下，你帮我查查呗，就是那个埃及金字塔到底有多高，帮我搜一下就行，其他的啥也不用帮我做。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "须与「埃及金字塔」「高度」相关，如「埃及金字塔 高度」" }
+    ],
+    "toolResults": { "search": "搜索结果（替身）：埃及吉萨大金字塔原高约146.6米，现高约138.8米。" },
+    "notes": "需求单一明确（查金字塔高度），啰嗦客套话易诱导模型附加 get_time/add_memory 等多余调用——出现任一第二工具调用即判错。无相对时间词，不需要 get_time。"
+  },
+  {
+    "id": "two-turn-001",
+    "category": "two_turn",
+    "description": "相对时间「最近」须先 get_time 取基准，再把 2026 年 10 月融入第二轮 search 的 query",
+    "input": "最近AI都有什么大新闻啊？帮我搜搜看。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 }, { "tool": "search", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" },
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "必须包含「2026」或「2026年10月」（如「2026年10月 AI 大新闻」），并含「AI」与新闻相关词；不含 2026 判错" }
+    ],
+    "toolResults": {
+      "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}",
+      "search": "搜索结果（替身）：2026年10月 AI 领域大事件汇总：多模态模型密集发布、Agent 工具调用竞赛升温。"
+    },
+    "notes": "「最近」为相对时间，金标 round1 get_time、round2 search。基准 2026-10-12（周一）→ 最近≈2026年10月，故 query 须体现 2026。e2e 脚本按工具名返回固定替身，get_time 若两轮均被调用则返回相同固定 JSON，可接受。"
+  },
+  {
+    "id": "two-turn-002",
+    "category": "two_turn",
+    "description": "相对时间「今年国庆」基于基准换算为 2026 年国庆，两轮 get_time→search",
+    "input": "帮我搜搜今年国庆假期的旅游数据呗，看看出门的人多不多。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 }, { "tool": "search", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" },
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "必须包含「2026」（如「2026年国庆 旅游数据」或「2026 国庆 出行人数」），并含「国庆」与「旅游/出行」相关词" }
+    ],
+    "toolResults": {
+      "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}",
+      "search": "搜索结果（替身）：2026年国庆假期全国国内出游人次与旅游收入再创新高，热门城市景区持续火爆。"
+    },
+    "notes": "基准 2026-10-12，「今年国庆」=2026年10月1日-7日（刚结束），故 query 须含 2026。round1 get_time、round2 search 固定两轮链；get_time 两轮返回相同固定值可接受。与 search-005（用户显式给出 2026，无需 get_time）形成对照。"
+  },
+  {
+    "id": "two-turn-003",
+    "category": "two_turn",
+    "description": "相对时间「上个月」换算为 2026年9月，第二轮 query 须含「2026年9月」",
+    "input": "上个月发布了哪些新手机啊？帮我查一下。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 }, { "tool": "search", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" },
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "必须包含「2026年9月」（或等价的 2026-09），并含「手机/新机发布」相关词；写成其他月份判错" }
+    ],
+    "toolResults": {
+      "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}",
+      "search": "搜索结果（替身）：2026年9月新机发布盘点：多款旗舰折叠屏与中端新机扎堆上市。"
+    },
+    "notes": "基准 2026-10-12，「上个月」=2026年9月，query 金标为含「2026年9月」。两轮固定 get_time→search。"
+  },
+  {
+    "id": "two-turn-004",
+    "category": "two_turn",
+    "description": "相对时间「如今」基于基准换算为 2026年10月当季，两轮 get_time→search",
+    "input": "现在大家都流行穿啥啊？帮我搜搜如今流行的穿搭。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 }, { "tool": "search", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" },
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "必须包含「2026」（如「2026年10月 流行穿搭」或「2026 秋冬 穿搭趋势」），并含「穿搭/流行」相关词" }
+    ],
+    "toolResults": {
+      "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}",
+      "search": "搜索结果（替身）：2026年秋冬流行穿搭趋势：复古运动风、层叠混搭与大地色系持续走热。"
+    },
+    "notes": "「如今/现在」为相对时间，基准 2026-10-12（10月中旬，秋季）→ query 须体现 2026（10月/秋冬）。两轮固定链。"
+  },
+  {
+    "id": "two-turn-005",
+    "category": "two_turn",
+    "description": "open_page 先以 url 打开页面，再按替身返回的编号链接列表跟读 link=1",
+    "input": "帮我打开 https://example.com/tech/roundup 这个页面看看，然后帮我点开里面第 1 条链接，我想知道它具体讲了啥。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 }, { "tool": "open_page", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.com/tech/roundup", "round": 1 },
+      { "tool": "open_page", "field": "link", "rule": "exact", "value": 1, "round": 2 }
+    ],
+    "toolResults": { "open_page": "页面标题：本周科技 roundup。摘要：本周 AI、芯片与新能源三大领域动态汇总。页面内链接：1. https://example.com/tech/roundup/ai 2. https://example.com/tech/roundup/chip 3. https://example.com/tech/roundup/ev" },
+    "notes": "round1 以 url 精确打开；替身返回含编号链接列表（1=…/ai、2=…/chip、3=…/ev）；round2 跟读第 1 条，link 必须精确传数字 1，不得把完整 URL 塞进 url 字段。同一工具两轮返回相同替身文本，e2e 按工具名返回固定值即可。"
+  },
+  {
+    "id": "two-turn-006",
+    "category": "two_turn",
+    "description": "open_page 跟读第 2 条编号链接，验证 link 参数按编号而非 URL 传递",
+    "input": "打开 https://example.com/news/daily 让我瞅瞅，看完再帮我点进去第 2 个链接看看内容。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 }, { "tool": "open_page", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.com/news/daily", "round": 1 },
+      { "tool": "open_page", "field": "link", "rule": "exact", "value": 2, "round": 2 }
+    ],
+    "toolResults": { "open_page": "页面标题：每日新闻精选。摘要：今日财经、体育与娱乐热点汇总。页面内链接：1. https://example.com/news/daily/finance 2. https://example.com/news/daily/sports 3. https://example.com/news/daily/entertainment" },
+    "notes": "round1 url 精确匹配；round2 link 精确等于 2（对应 …/sports），传 1 或 3 或把 URL 写进 url 字段均判错。open_page 两轮返回同一替身文本可接受。"
+  },
+  {
+    "id": "two-turn-007",
+    "category": "two_turn",
+    "description": "「明晚九点」须 get_time 定基准再 set_reminder，seconds=86400",
+    "input": "明晚九点提醒我参加线上会议，别让我忘了。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 }, { "tool": "set_reminder", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" },
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 86400 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含「线上会议」相关事项" }
+    ],
+    "toolResults": {
+      "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}",
+      "set_reminder": "提醒已设置：86400 秒后（2026-10-13 21:00）提醒您参加线上会议。"
+    },
+    "notes": "算式：基准 2026-10-12T21:00（周一）→ 明晚=2026-10-13 21:00，差值 24 小时=86400 秒，恰为 seconds 允许上限（10~86400，含边界），exact=86400。不是 79200（那是 22 小时）；也不允许跳过 get_time 单轮直出。"
+  },
+  {
+    "id": "two-turn-008",
+    "category": "two_turn",
+    "description": "接续上一轮约定的提醒并改设为「明早八点吃药」，get_time→set_reminder seconds=39600",
+    "input": "对，就按咱们刚才商量好的，帮我设成明早八点提醒我吃药吧。",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [
+      { "role": "user", "content": "我想设个吃药的提醒" },
+      { "role": "assistant", "content": "好的呀，请问您想定在几点提醒您吃药呢？" }
+    ],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 }, { "tool": "set_reminder", "round": 2 } ] ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" },
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 39600 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含「吃药」相关事项" }
+    ],
+    "toolResults": {
+      "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}",
+      "set_reminder": "提醒已设置：39600 秒后（2026-10-13 08:00）提醒您吃药。"
+    },
+    "notes": "算式：基准 2026-10-12T21:00 → 明早八点=2026-10-13 08:00，差值 11 小时=39600 秒。「明早」跨越午夜需加一天，若误用当天 08:00（负数）或差 12 小时（43200）均判错。historySeed 提供上一轮约定语境。"
+  },
+  {
+    "id": "context-001",
+    "category": "context",
+    "description": "群聊场景下@机器人发起搜索请求，验证群语境中的直接搜索调用",
+    "input": "@机器人 那帮我搜搜成都都有啥必吃的火锅店呗",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [
+      { "role": "user", "content": "小红：周末想出去玩，不知道去哪儿" },
+      { "role": "assistant", "content": "可以考虑成都呀，美食特别多，很适合周末短途游。" }
+    ],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "须含「成都」与「火锅」相关词，可含「必吃」「推荐」等" }
+    ],
+    "toolResults": { "search": "搜索结果（替身）：成都必吃火锅店榜单：老码头、蜀九香、小龙坎等人气门店。" },
+    "notes": "群聊语境（historySeed 模拟群友发言，真实系统会在 content 前加说话人前缀如「小红：」）。「那」承接群聊上下文但搜索目标明确，单轮一次 search 即可；query 缺「成都」或「火锅」判错。"
+  },
+  {
+    "id": "context-002",
+    "category": "context",
+    "description": "群聊历史指代：上一条群友消息含 URL，本条「打开它」须解析为该 URL",
+    "input": "打开它看看里面到底写了啥",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [
+      { "role": "user", "content": "小明：刚看到一篇讲早睡好处的文章，挺有意思的 https://example.com/health/sleep" }
+    ],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.com/health/sleep" }
+    ],
+    "toolResults": { "open_page": "页面标题：科学早睡指南。摘要：坚持早睡可改善记忆与情绪，建议固定作息并减少睡前屏幕时间。页面内链接：1. https://example.com/health/sleep/faq" },
+    "notes": "群聊指代消解：「它」=上一条群友（小明）消息中的 URL，url 须精确取历史值，编造或改写域名判错。群消息以「小明：」前缀模拟多人语境（真实系统由 Runtime 注入说话人前缀）。"
+  },
+  {
+    "id": "context-003",
+    "category": "context",
+    "description": "群聊多说话人历史中按昵称定位：打开「小明说的那个网站」",
+    "input": "刚才小明说的那个学习网站帮我打开看看，我也想瞧瞧",
+    "context": { "scene": "group", "authorName": "测试用户" },
+    "historySeed": [
+      { "role": "user", "content": "小红：今天天气真不错" },
+      { "role": "user", "content": "小明：我发现一个学英语的网站挺好用的 https://example.com/learn/english" },
+      { "role": "assistant", "content": "听起来不错，需要我帮你打开看看吗？" }
+    ],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.com/learn/english" }
+    ],
+    "toolResults": { "open_page": "页面标题：英语自学站。摘要：提供分级听力、口语跟读与词汇打卡功能。页面内链接：1. https://example.com/learn/english/course" },
+    "notes": "historySeed 含两个不同 user 消息（小红闲聊+小明含 URL），模型须按昵称「小明」从多条群消息中选中正确 URL，误用其他发言内容或编造 URL 判错。多人前缀「小红：」「小明：」模拟真实群聊注入格式。"
+  },
+  {
+    "id": "context-004",
+    "category": "context",
+    "description": "单聊历史指代：历史中已给过 URL，本轮「这个链接」解析为该 URL 并打开",
+    "input": "帮我看看这个链接讲的是什么呗",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [
+      { "role": "user", "content": "我收藏了个页面你看 https://example.com/faq/refund-policy" },
+      { "role": "assistant", "content": "好的，已经收到您的链接啦。" }
+    ],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "open_page", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "open_page", "field": "url", "rule": "exact", "value": "https://example.com/faq/refund-policy" }
+    ],
+    "toolResults": { "open_page": "页面标题：退款政策常见问题。摘要：7 天无理由退货流程、运费承担与到账时效说明。页面内链接：1. https://example.com/faq/refund-policy/contact" },
+    "notes": "本轮消息本身无 URL，「这个链接」须从 historySeed 中解析，url 精确等于历史值。若模型反问用户要链接（不调工具）判错，因为历史中信息充分。与 no-tool-012（无历史可依应澄清）形成对照。"
+  },
+  {
+    "id": "context-005",
+    "category": "context",
+    "description": "单聊话题延续：基于历史话题「再搜搜相关的」，query 须沿用对话原话题词",
+    "input": "再帮我搜搜相关的呗，我想多了解一些",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [
+      { "role": "user", "content": "最近对碳纤维自行车挺感兴趣的，就是还不太懂" },
+      { "role": "assistant", "content": "碳纤维车架轻量且强度高，是现在很热门的选择呢。" }
+    ],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "须体现历史话题关键词「碳纤维」与「自行车」（可加选购/入门等修饰），与历史话题无关判错" }
+    ],
+    "toolResults": { "search": "搜索结果（替身）：碳纤维自行车选购指南：车架等级、重量与价格区间入门科普。" },
+    "notes": "指代目标在历史而非本轮消息，query 必须携带对话原话题词（碳纤维/自行车）。历史无相对时间要求，无需 get_time；单轮一次 search。"
+  },
+  {
+    "id": "context-006",
+    "category": "context",
+    "description": "空历史对照：无任何历史时问「上次聊的那个」，金标为 recall_memory 检索记忆",
+    "input": "我们上次聊的那个帮我找找看",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "recall_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "recall_memory", "field": "keywords", "rule": "type", "hint": "字符串数组 1~5 个元素" },
+      { "tool": "recall_memory", "field": "keywords", "rule": "semantic", "hint": "须取自用户原话的词（如「上次」「聊」），不得编造未出现过的具体话题词" }
+    ],
+    "toolResults": { "recall_memory": "未找到相关记忆记录。" },
+    "notes": "无对话历史且无记忆可依，模型无法直接知道「那个」指什么：金标以 recall_memory 路径为准（keywords 用对话原词）；模型直接回复「没有找到相关记录」不调工具也可接受（两种行为均不算错），但直接编造内容回答判错。"
+  },
+  {
+    "id": "hidden-param-001",
+    "category": "hidden_param",
+    "description": "正常搜索请求中模型不得伪造 scope/openid 等未在 schema 中的隐藏身份字段",
+    "input": "帮我搜一下白醋能不能除水垢，管不管用",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "search", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "search", "field": "query", "rule": "semantic", "hint": "须含「白醋」与「水垢」相关词" },
+      { "tool": "search", "field": "scope", "rule": "forbidden" },
+      { "tool": "search", "field": "openid", "rule": "forbidden" },
+      { "tool": "search", "field": "search_depth", "rule": "optional_omitted_or_enum", "enum": ["basic", "advanced"] }
+    ],
+    "toolResults": { "search": "搜索结果（替身）：白醋呈弱酸性，对水垢有一定溶解作用，加热后效果更好。" },
+    "notes": "scope/openid 从未出现在发给模型的 search schema 中，生成即属幻觉参数（伪造租户/身份上下文），严格判错。无相对时间词，单轮一次 search 即可，多调 get_time 也判错。"
+  },
+  {
+    "id": "hidden-param-002",
+    "category": "hidden_param",
+    "description": "add_memory 仅接受 content，不得伪造 openid/user_id/name 等用户身份字段",
+    "input": "记住我比较怕辣，以后帮我点外卖的时候都要备注免辣",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "add_memory", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "add_memory", "field": "content", "rule": "semantic", "hint": "须包含「怕辣」与「免辣/备注免辣」相关信息" },
+      { "tool": "add_memory", "field": "openid", "rule": "forbidden" },
+      { "tool": "add_memory", "field": "user_id", "rule": "forbidden" },
+      { "tool": "add_memory", "field": "name", "rule": "forbidden" }
+    ],
+    "toolResults": { "add_memory": "已记住：用户怕辣，点外卖需备注免辣。" },
+    "notes": "add_memory 的 schema 只有 content 一个字段；openid/user_id/name 均为幻觉身份参数，出现即判错。单轮一次调用，多余工具调用亦判错。"
+  },
+  {
+    "id": "hidden-param-003",
+    "category": "hidden_param",
+    "description": "get_time 为无参数工具，调用时不得携带任何多余字段",
+    "input": "现在几点了啊",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "get_time", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "get_time", "field": "*", "rule": "empty_params" }
+    ],
+    "toolResults": { "get_time": "{\"datetime\":\"2026-10-12T21:00:00+08:00\",\"date\":\"2026-10-12\",\"timezone\":\"Asia/Shanghai\"}" },
+    "notes": "get_time 无任何参数，empty_params 表示调用参数须为空对象；附带 timezone、format 等任何字段均属幻觉参数判错。单轮一次调用，多调判错。"
+  },
+  {
+    "id": "hidden-param-004",
+    "category": "hidden_param",
+    "description": "set_reminder 时长类提醒不得伪造 id/user 等多余字段",
+    "input": "半小时后提醒我去楼下取快递",
+    "context": { "scene": "c2c", "authorName": "测试用户" },
+    "historySeed": [],
+    "expected": { "shouldCallTools": true, "paths": [ [ { "tool": "set_reminder", "round": 1 } ] ] },
+    "argumentRules": [
+      { "tool": "set_reminder", "field": "seconds", "rule": "exact", "value": 1800 },
+      { "tool": "set_reminder", "field": "description", "rule": "semantic", "hint": "须包含「取快递」相关事项" },
+      { "tool": "set_reminder", "field": "id", "rule": "forbidden" },
+      { "tool": "set_reminder", "field": "user", "rule": "forbidden" }
+    ],
+    "toolResults": { "set_reminder": "提醒已设置：1800 秒后提醒您去楼下取快递。" },
+    "notes": "「半小时后」为时长而非时刻，seconds=1800 直译，无需 get_time。id/user 从未出现在 schema 中，生成即幻觉参数判错。单轮一次调用。"
+  }
+]

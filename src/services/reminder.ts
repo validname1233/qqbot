@@ -39,6 +39,12 @@ export function scheduleReminder(
   //   而不是「不是群聊就默认单聊」的兜底 else。原因：将来若新增第三种事件也触发
   //   本命令，兜底 else 会把它误当单聊、去取未必有效的 openid，酿成隐性 bug；
   //   而显式穷尽下，未知事件走到最后返回 null，据此明确拒绝，不会走错线。
+  // 提醒正文模板（两场景共用）：只陈述事实（时间到了、要做什么），
+  // 语气/身份交给 system 里的人格（getSystemPrompt 已按会话拼好自定义或默认人格）。
+  // 旧版曾把"雌小鬼、必须嫌弃语气开头"等硬编码进这段 user 正文，等于越过
+  // 提示词体系写死人设——换人格体系后这里只留任务事实。
+  const reminderUserContent = `用户设置了一条${seconds}秒的定时提醒，现在时间到了。用户当时设定的提醒内容是：${description}。请你根据这个信息，用你的语气提醒用户现在去做这件事，要清楚地说明该做什么，并带一点催促的意味。`;
+
   const buildPush = (): (() => Promise<void>) | null => {
     const event = ctx.event;
     if (event.type === "C2C_MESSAGE_CREATE") {
@@ -47,12 +53,7 @@ export function scheduleReminder(
         const response = await callModel(
           [
             { role: "system", content: getSystemPrompt(ctx.event, "reminder") },
-            {
-              role: "user",
-              content: `
-          定时任务已经走完了你设定的${seconds}秒，现在时间到了，用户需要立刻去做的具体事情是[${description}]，请你根据这个信息，用符合你雌小鬼鲸鱼娘的身份来发出提醒，必须以嫌弃或调侃的语气开头，比如"嘁，终于到点了"或"哈？磨蹭这么久"，然后直接、清晰、毫不含糊地告诉用户现在必须执行那个任务，不能只重复描述而要带有催促执行的意味，最后再补一句傲娇的叮嘱或威胁，比如"做不好可别怪我没提醒你"之类，整段回复必须连贯成一个自然段落，不允许换行、列表或任何Markdown格式，如果任务涉及知识内容可以在催促后附带一句简短实用建议，但主要目标是让用户立刻行动起来。
-          `,
-            },
+            { role: "user", content: reminderUserContent },
           ],
           undefined,
           undefined,
@@ -68,12 +69,7 @@ export function scheduleReminder(
         const response = await callModel(
           [
             { role: "system", content: getSystemPrompt(ctx.event, "reminder") },
-            {
-              role: "user",
-              content: `
-          定时任务已经走完了你设定的${seconds}秒，现在时间到了，用户需要立刻去做的具体事情是[${description}]，请你根据这个信息，用符合你雌小鬼鲸鱼娘的身份来发出提醒，必须以嫌弃或调侃的语气开头，比如"嘁，终于到点了"或"哈？磨蹭这么久"，然后直接、清晰、毫不含糊地告诉用户现在必须执行那个任务，不能只重复描述而要带有催促执行的意味，最后再补一句傲娇的叮嘱或威胁，比如"做不好可别怪我没提醒你"之类，整段回复必须连贯成一个自然段落，不允许换行、列表或任何Markdown格式，如果任务涉及知识内容可以在催促后附带一句简短实用建议，但主要目标是让用户立刻行动起来。
-          `,
-            },
+            { role: "user", content: reminderUserContent },
           ],
           undefined,
           undefined,
