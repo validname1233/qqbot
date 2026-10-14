@@ -1,7 +1,7 @@
 {
   "servers": {
     "kb": {
-      "url": "http://zyh.kyson.asia:28080/rag",
+      "url": "http://your-gateway.example.com:28080/rag",
       "apiKey": "这里填端侧服务器的 Bearer key（omen6:~/MCP_RAG/.env 的 KB_BEARER_KEY）",
       "expose": ["kb_search"],
       "progressNotes": {
@@ -10,7 +10,7 @@
       }
     },
     "home": {
-      "url": "http://192.168.10.2:3001/mcp",
+      "url": "http://192.168.0.10:3001/mcp",
       "expose": ["*"]
     }
   }
