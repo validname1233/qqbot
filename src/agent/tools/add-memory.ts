@@ -5,7 +5,8 @@
 
 import type { Tool } from "../tool.js";
 import { callModel } from "../../services/model.js";
-import { memoryKey, pushMemoryNotice } from "../context.js";
+import { pushMemoryNotice } from "../context.js";
+import { tenantKey } from "../../session/key.js";
 import { longTermMemoryStore } from "../memory/long-term.js";
 
 const MEMORY_INDEX_PROMPT = `请阅读下面这段用户希望被记住的内容，提炼一句简短的检索摘要（10-20字），
@@ -49,7 +50,7 @@ export const addMemoryTool: Tool = {
     }
 
     const memoryIndex = await buildMemoryIndex(content);
-    const key = memoryKey(ctx.event);
+    const key = tenantKey(ctx.event);
     await longTermMemoryStore.add(
       key,
       { openid: ctx.event.authorOpenid, name: ctx.event.authorName },

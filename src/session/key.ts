@@ -1,32 +1,34 @@
-// session/key.ts —— 算「会话键」，也就是画出「谁和谁共享同一份状态」的边界。
-// SessionStore 只是按 key 存取的哑容器，共享粒度全在这个 key 里：
-//   同一个 key 的消息 → 命中同一份状态；不同 key → 天然隔离。
+// session/key.ts —— 租户身份的唯一真相源：tenantKey。
 //
-// 当前策略：锁到「人」。单聊按用户；群聊按「这个群里的这个人」——
-// 群里各玩各的，互不干扰。若以后要「一个群一桌大家共用一局」（如德州扑克），
-// 把群分支的末尾 `:${authorOpenid}` 去掉即可，粒度就从「人」升到「群」。
+// 历史：这里曾有三种 key（sessionKey 人粒度 / conversationKey、memoryKey 会话粒度），
+// 加上 knowledge-base.ts 的 kbScope（kb: 前缀）共四种，值域重叠、名实不符，还出过
+// "人粒度三段键误存进定时任务表"的真实事故（见 scheduler/store.ts 迁移注释）。
+// 2026-10-14 产品语义决策统一：QQ 群场景里 bot 面向的是"群"这个整体，群员身份
+// 平等——所有租户身份收敛为一个键。
+//
+// 语义变化（原 sessionKey 是人粒度，此次统一为群粒度）：
+//   - 同一个群同时只允许一个长流程（Agent/深检），第二个会被并发闸拒绝；
+//   - /stop 变成群粒度中止：任何群员可停掉本群正在跑的任务（abort 发起人记日志）；
+//   - cron 定时任务与群内用户流程互斥，到点撞上静默跳过（cron.ts 现成处理）。
+//
+// 消费者速查：
+//   状态机锁（session/runner）、/stop 并发闸（session/interrupt，loop.ts / deep-search.ts
+//   登记处）、进度推送（services/progress-bus）、页面快照池（services/browse/page-pool）、
+//   短期/长期记忆与图片表（agent/memory/*）、观察者落库（services/memory-log）、
+//   自定义人格（services/prompts）、定时任务归属（services/scheduler）、知识库 scope
+//   （services/knowledge-base + arg-injectors 注入）、规划中：工作台目录 hash。
+//
+// 持久化兼容：四张表（short_term_messages / message_images / scheduled_tasks /
+// group_personalities）存的两段键形状与本函数输出一致，零迁移；sessionKey 的旧三段值
+// 只存在于内存 Map（interrupt/progress-bus/page-pool），重启即清。
 
 import type { BotEvent } from "../events/registry.js";
 
+// 租户键：群聊一群一份（整群共享），单聊一人一份。
 // 前缀 group: / c2c: 是命名空间隔离：万一群 openid 和用户 openid 字符串偶然相同，
 // 有前缀就不会串到同一份状态里。event.type 一判，TS 把 event 收窄到对应事件，
 // 才能安全访问 groupOpenid / authorOpenid（可辨识联合收窄，和 dispatcher 里同一套路）。
-export function sessionKey(event: BotEvent): string {
-  if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
-    return `group:${event.groupOpenid}:${event.authorOpenid}`;
-  }
-  return `c2c:${event.authorOpenid}`;
-}
-
-// 会话粒度的键：群聊整个群一份状态，单聊同 sessionKey。
-// 状态机框架（session/runner.ts）用它锁「模式」——群粒度是用户决策（2026-09-30）：
-// 猜数字升级为全群协作猜（谁都能发言，谜底共享），德州扑克更是天然群粒度
-//（一个群一桌）。代价是锁期间全群消息都进 step——由机器的 passThrough 语义
-// 放行不相关消息（见 machines/types.ts），机器必须自己区分「游戏行动」和「闲聊」。
-// 刻意不与 sessionKey（人粒度，progress-bus/interrupt 仍用）、memoryKey（记忆）
-// 共用：三种 key 三种语义，本代码库的惯例是 key 语义分离，见 agent/context.ts。
-// 形状与 memoryKey 相同但仍是独立函数——语义来源不同，将来演化路径不同。
-export function conversationKey(event: BotEvent): string {
+export function tenantKey(event: BotEvent): string {
   if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
     return `group:${event.groupOpenid}`;
   }

@@ -1,28 +1,17 @@
 // agent/context.ts —— 「记忆装配」模块：单聊/群聊在 Agent 链路里的差异全部收在这里，
-// 对外只暴露三个函数，loop.ts 的节点只管调用，不用各自判断 event.type。
+// 对外只暴露两个函数，loop.ts 的节点只管调用，不用各自判断 event.type。
 //
-// 三个函数各管一件事，互不依赖：
-//   memoryKey               —— 短期记忆/长期记忆共用的会话键（隔离粒度）
+// 两个函数各管一件事，互不依赖：
 //   formatSpeakerContent    —— 短期记忆的说话人格式化（写入时做一次，读取不再二次加工）
-//   buildLongTermContextText —— 长期记忆注入文本，读 long-term.ts 该 key 下的全部记忆
+//   buildLongTermContextText —— 长期记忆注入文本，读 long-term.ts 该租户键下的全部记忆
+//
+// 租户键（tenantKey）已在 2026-10-14 键统一中收编至 session/key.ts——本文件曾经的
+// memoryKey 与其值完全相同（群一群一份/单聊一人一份），是统一的历史来源之一。
 
 import type { BotEvent } from "../events/registry.js";
 import { longTermMemoryStore } from "./memory/long-term.js";
+import { tenantKey } from "../session/key.js";
 import { pushC2CMessage, pushGroupMessage } from "../qq/messages.js";
-
-// 记忆专用的会话键：和状态机用的 sessionKey() 故意不同粒度。
-// sessionKey() 群聊分支带 authorOpenid（群里各人独立锁状态机，互不干扰），
-// 但记忆要的是"整群共享一份窗口"（AI 能看到群里其他人跟机器人说过什么），
-// 所以这里把群聊的 authorOpenid 去掉，只保留 group:<groupOpenid>；
-// 单聊没有这个问题，直接复用 sessionKey() 的结果。
-// 不改 sessionKey() 本身：它同时被 session/runner.ts 的状态机锁定逻辑复用，
-// 那边需要的仍然是"每人每群"的隔离粒度，两者语义不同，不能合并成一个函数。
-export function memoryKey(event: BotEvent): string {
-  if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
-    return `group:${event.groupOpenid}`;
-  }
-  return `c2c:${event.authorOpenid}`;
-}
 
 // 短期记忆的说话人格式化：所有场景统一在 content 前拼"昵称："，不再区分群聊/单聊——
 // 单聊也拼是为了让"昵称："前缀成为恒定格式，functional.ts 的 SPEAKER_NOTE 才能写成
@@ -40,14 +29,14 @@ export function formatSpeakerContent(
   return `${speaker}：${content}`;
 }
 
-// 长期记忆注入文本。单聊/群聊不分支：都是对 memoryKey(event) 这个 key 下的记忆做
+// 长期记忆注入文本。单聊/群聊不分支：都是对 tenantKey(event) 这个 key 下的记忆做
 // RAG 相关度召回（queryText 做 embedding 查询，见 memory/long-term.ts 的 search()），
 // 取 top-K 条格式化成一段 system 文本。
 // 单聊场景下"由XX记录"的 XX 恒等于该用户自己，信息冗余但无害，不必为此单独分支。
 const TOP_K = 5;
 
 export async function buildLongTermContextText(event: BotEvent, queryText: string): Promise<string> {
-  const memories = await longTermMemoryStore.search(memoryKey(event), queryText, TOP_K);
+  const memories = await longTermMemoryStore.search(tenantKey(event), queryText, TOP_K);
   if (memories.length === 0) {
     return "";
   }

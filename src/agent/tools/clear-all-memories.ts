@@ -2,7 +2,8 @@
 // 危险操作：不可逆，必须在工具描述里明确要求用户说"所有"才触发。
 
 import type { Tool } from "../tool.js";
-import { memoryKey, pushMemoryNotice } from "../context.js";
+import { pushMemoryNotice } from "../context.js";
+import { tenantKey } from "../../session/key.js";
 import { longTermMemoryStore } from "../memory/long-term.js";
 
 export const clearAllMemoriesTool: Tool = {
@@ -19,7 +20,7 @@ export const clearAllMemoriesTool: Tool = {
   },
 
   async run(args, ctx) {
-    const key = memoryKey(ctx.event);
+    const key = tenantKey(ctx.event);
     const allMemories = await longTermMemoryStore.list(key);
 
     if (allMemories.length === 0) {

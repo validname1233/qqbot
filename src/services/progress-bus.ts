@@ -8,11 +8,11 @@
 // 的请求不会把进度发到群乙），/stop 中断与异常路径由退订兜住。无订阅者时
 // emit 是 no-op：深检（一期未接入）或请求已结束后的迟到事件直接丢弃。
 //
-// 订阅 key 用 sessionKey（人粒度），与 /stop 并发闸（beginControlledFlow）
+// 订阅 key 用 tenantKey（群粒度，2026-10-14 键统一），与 /stop 并发闸（beginControlledFlow）
 // 同粒度——同 key 并发请求本来就被闸挡住，"一个 key 至多一个活跃订阅"成立。
 
 import type { BotEvent } from "../events/registry.js";
-import { sessionKey } from "../session/key.js";
+import { tenantKey } from "../session/key.js";
 import { pushGroupMessage, pushC2CMessage } from "../qq/messages.js";
 import { logger } from "./logger.js";
 
@@ -38,7 +38,7 @@ function makeListener(event: BotEvent): Listener {
 // 请求入口调用（runAgentTurn）：建立这次请求的进度订阅，返回退订函数。
 // 重复订阅同 key 时新替旧（防御性——并发闸正常工作时不会走到）。
 export function subscribeProgress(event: BotEvent): () => void {
-  const key = sessionKey(event);
+  const key = tenantKey(event);
   listeners.set(key, makeListener(event));
   return () => {
     // 只删自己的订阅：退订时若 key 已被新订阅占据，说明有异常并发，不误删
@@ -51,7 +51,7 @@ export function subscribeProgress(event: BotEvent): () => void {
 // listener 的失败在这里兜成 warn（用户关闭"允许主动消息"时静默降级，
 // 进度提示是锦上添花，不能炸掉工具本身）。
 export function emitProgress(event: BotEvent, text: string): void {
-  const key = sessionKey(event);
+  const key = tenantKey(event);
   const listener = listeners.get(key);
   if (listener === undefined) return;
   listener(text).catch((error: unknown) => {

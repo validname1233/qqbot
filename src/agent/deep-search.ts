@@ -43,7 +43,7 @@ import { loadPage } from "./tools/open-page.js";
 import { searchTool } from "./tools/search.js";
 import { emitProgress, subscribeProgress } from "../services/progress-bus.js";
 import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
-import { sessionKey } from "../session/key.js";
+import { tenantKey } from "../session/key.js";
 import { logger } from "../services/logger.js";
 
 // 深检工具走独立注册表（deep-search/registry.ts），不进 agent/registry.ts 共享注册表
@@ -486,14 +486,14 @@ export async function runDeepSearch(
   ctx: MessageContext,
 ): Promise<string> {
   // /stop 中断挂载（拒绝并发语义，与 runAgentTurn 同款）：登记失败 = 该会话已有长流程。
-  const flowKey = sessionKey(ctx.event);
+  const flowKey = tenantKey(ctx.event);
   const controller = beginControlledFlow(flowKey);
   if (controller === null) {
     return "上一个任务还在跑哦～先发 /stop 停掉它，再重新发起吧。";
   }
 
-  const { memoryKey, sqliteMemoryStore } = await importMemory();
-  const key = memoryKey(ctx.event);
+  const { sqliteMemoryStore } = await importMemory();
+  const key = tenantKey(ctx.event);
 
   // 进度推送订阅（progress-bus，二期接入）：planNode 的"正在规划路线"和浏览循环
   // 里声明了 progressNote 的工具（search/open_page/interact_page，经 runTool 切面）
@@ -542,14 +542,14 @@ export async function runDeepSearch(
 // 延迟 import：memory 依赖 node:sqlite，本地测试（run-graph.ts）不想连生产库时
 // 也能复用本模块。放函数内而不是顶部，避免测试路径加载存储层。
 async function importMemory() {
-  const { memoryKey } = await import("../agent/context.js");
+  const { tenantKey } = await import("../session/key.js");
   const { sqliteMemoryStore } = await import("./memory/sqlite.js");
-  return { memoryKey, sqliteMemoryStore };
+  return { tenantKey, sqliteMemoryStore };
 }
 
 // 本地测试入口（test/deep_research/run-graph.ts 用）：跳过短期记忆落库，
 // mock 一个最小 MessageContext——图的节点只用到 event 的 authorName/authorOpenid
-// （页面池 sessionKey、getSystemPrompt 的 memoryKey），这些字段用假值即可。
+// （页面池/并发闸/记忆装配的 tenantKey），这些字段用假值即可。
 // 注意 skipMemory 绕过了 sqliteMemoryStore：不会创建/写 data/memory.sqlite。
 export async function runDeepSearchLocally(question: string): Promise<string> {
   const mockEvent = {

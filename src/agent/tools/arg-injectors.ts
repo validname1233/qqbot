@@ -13,7 +13,7 @@
 
 import type { MessageContext } from "../../types.js";
 import type { ToolSchema } from "../types.js";
-import { kbScope } from "../../services/knowledge-base.js";
+import { tenantKey } from "../../session/key.js";
 
 // 注入器注册项：
 //   inject       —— 调用前改写参数。返回值整体作为最终 args（模型传参里
@@ -69,7 +69,9 @@ export function stripHiddenParams(toolName: string, parameters: ToolSchema["func
 // ---- 首批注册：kb_search 的租户隔离（自 bridge.ts 迁入） ----
 // key 用 MCP 包装名 mcp_kb_kb_search（bridge 的 name 生成规则），与注册表
 // 命名空间一致。scope 无条件覆盖：模型只保留 query/top_k 的发言权。
+// scope 值 = tenantKey（2026-10-14 键统一，去掉旧 kb: 前缀——测试环境远端
+// 旧数据已弃；若将来远端多入口需命名空间，在此处加前缀即可）。
 registerArgInjector("mcp_kb_kb_search", {
-  inject: (args, ctx) => ({ ...args, scope: kbScope(ctx.event) }),
+  inject: (args, ctx) => ({ ...args, scope: tenantKey(ctx.event) }),
   hideFromModel: ["scope"],
 });

@@ -69,7 +69,7 @@ const { initializeMcpTools } = await import("../../src/agent/mcp/initialize.js")
 const { toolSchemas, runTool } = await import("../../src/agent/registry.js");
 const { registerMcpAdapter } = await import("../../src/agent/mcp/adapters.js");
 const { disconnectAll } = await import("../../src/agent/mcp/client.js");
-const { sessionKey } = await import("../../src/session/key.js");
+const { tenantKey } = await import("../../src/session/key.js");
 const crypto2 = await import("node:crypto");
 void crypto2;
 
@@ -88,7 +88,7 @@ const mockEvent = {
   authorName: "测试",
 } as never;
 const ctx = { command: null, text: "", args: "", event: mockEvent } as Parameters<typeof runTool>[2];
-void sessionKey;
+void tenantKey;
 
 const echoed = await runTool("mcp_mock_echo", { text: "hello mcp" }, ctx);
 check("echo 调用返回回显", echoed === "echo: hello mcp", `got: ${echoed}`);

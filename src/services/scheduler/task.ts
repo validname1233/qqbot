@@ -8,12 +8,11 @@
 //   本命令 = "每天固定时刻跑一次 /Agent"（重量，报告落记忆、进度推送生效）。
 
 import type { CommandService, MessageContext } from "../../types.js";
-// 任务归属键用 memoryKey（会话粒度：group:<纯群openid> / c2c:<userOpenid>），
-// 不用 sessionKey（人粒度：群聊是 group:<群id>:<作者id> 三段）——cron.ts 要从
-// 这个键反解出投递目标的 openid，两段式才无歧义；三段式的作者段会被当进
-// openid 发给 API（实机 11300 事故的根因）。语义也更贴：任务推给整个会话，
-// 归属就是会话——群成员都能列出/删除本群任务，与 /set_personality 同粒度。
-import { memoryKey } from "../../agent/context.js";
+// 任务归属键用 tenantKey（群一群/单聊一人，2026-10-14 键统一后全项目同键）——
+// cron.ts 要从这个键反解出投递目标的 openid，两段式才无歧义；历史上误用
+// 人粒度三段键时，作者段会被当进 openid 发给 API（实机 11300 事故的根因）。
+// 语义也更贴：任务推给整个会话，归属就是会话——群成员都能列出/删除本群任务。
+import { tenantKey } from "../../session/key.js";
 import { addTask, listTasks, removeTask, type ScheduledTask } from "./store.js";
 import { registerCronForTask, unregisterCron } from "./cron.js";
 
@@ -46,7 +45,7 @@ export const scheduledTaskService: CommandService = {
   aliases: ["定时提问"],
 
   async handle(ctx: MessageContext): Promise<string | null> {
-    const key = memoryKey(ctx.event);
+    const key = tenantKey(ctx.event);
     const trimmed = ctx.args.trim();
     const spaceIdx = trimmed.indexOf(" ");
     const subCommand = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);

@@ -1,8 +1,9 @@
-// session/interrupt.ts —— 会话级流程中断的注册表（/stop 功能的核心）。
-// 语义：拒绝并发——一个会话（sessionKey，人粒度）同时只允许一个可控长流程
+// session/interrupt.ts —— 租户级流程中断的注册表（/stop 功能的核心）。
+// 语义：拒绝并发——一个租户（tenantKey，群一群/单聊一人）同时只允许一个可控长流程
 // （Agent 任务 / 深度检索）在跑。新流程想进来时若已有条目，begin 返回 null，
-// 由调用方拒绝并提示"先 /stop"。跨用户隔离天然成立：Map 按精确 key 查取，
-// 群里 B 的 /stop 碰不到 A 的条目。
+// 由调用方拒绝并提示"先 /stop"。跨租户隔离天然成立：Map 按精确 key 查取。
+// 群粒度语义（2026-10-14 键统一）：/stop 可停掉本群任何人的任务——abort
+// 发起人的审计日志见 services/stop.ts。
 //
 // endControlledFlow 带 controller 参数做身份校验：/stop 的 abortFlow 删掉条目后，
 // 被中断流程的 finally 还会再调一次 end——没有校验的话，若将来改成"顶掉"语义，

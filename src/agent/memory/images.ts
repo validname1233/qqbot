@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BotEvent } from "../../events/registry.js";
 import { isImageAttachment } from "../../events/attachments.js";
-import { memoryKey } from "../context.js";
+import { tenantKey } from "../../session/key.js";
 import { COLD_MESSAGES } from "./sqlite.js";
 import { describeImage } from "../../services/vision.js";
 import { logger } from "../../services/logger.js";
@@ -137,7 +137,7 @@ export async function persistEventImages(event: BotEvent): Promise<number[]> {
   const images = event.attachments.filter(isImageAttachment);
   if (images.length === 0) return [];
 
-  const key = memoryKey(event);
+  const key = tenantKey(event);
   const insertStmt = db.prepare(`
     INSERT OR IGNORE INTO message_images
       (key, qq_msg_id, filename, content_type, width, height, size, file_path, created_at)
@@ -177,19 +177,23 @@ export async function persistEventImages(event: BotEvent): Promise<number[]> {
 // 回写 description 列缓存，重复 /Agent 零成本复用。占位符"长在消息里"，展开后
 // 位置/作者（群聊昵称前缀）/时序天然正确，不需要独立的图片上下文块。
 //
+// 租户边界（IDOR 修复）：占位符解析发生在任意用户文本上，id 是全局自增的——
+// 用户手打"[图片:101]"就能引用别的会话入库的图。查询必须带 key 过滤：本会话
+// 的键由调用方从 event 推导（tenantKey），不信任占位符里的 id 归属。
+//
 // 降级规则（每种独立，互不拖垮）：
-//   行不存在（已被 prune，理论上消息出窗时图也同死，仅时间对齐误差兜底）→ [图片]
+//   行不存在（已被 prune / id 不属于本会话——跨租户引用同款降级）    → [图片]
 //   VISION_API_KEY 未配置（功能整体关闭）                          → [图片]
 //   超出 VISION_MAX_IMAGES 上限（只识图 id 最大的 N 张，即最近的）   → [图片]
 //   识图调用失败                                                  → [图片]{该图片暂时无法识别}
 const PLACEHOLDER_PATTERN = /\[图片:(\d+)\]/g;
 
-export async function expandImagePlaceholders(text: string): Promise<string> {
+export async function expandImagePlaceholders(text: string, key: string): Promise<string> {
   const ids = [...text.matchAll(PLACEHOLDER_PATTERN)].map((m) => Number(m[1]));
   if (ids.length === 0) return text;
 
   const getStmt = db.prepare(
-    `SELECT id, filename, content_type, file_path, description FROM message_images WHERE id = ?`,
+    `SELECT id, filename, content_type, file_path, description FROM message_images WHERE id = ? AND key = ?`,
   );
 
   interface ImageRow {
@@ -201,7 +205,7 @@ export async function expandImagePlaceholders(text: string): Promise<string> {
   }
   const rows = new Map<number, ImageRow>();
   for (const id of ids) {
-    const row = getStmt.get(id) as unknown as ImageRow | undefined;
+    const row = getStmt.get(id, key) as unknown as ImageRow | undefined;
     if (row !== undefined) rows.set(id, row);
   }
   if (rows.size === 0) return text.replace(PLACEHOLDER_PATTERN, "[图片]");
@@ -227,7 +231,12 @@ export async function expandImagePlaceholders(text: string): Promise<string> {
         const bytes = readFileSync(row.file_path);
         // content_type 是 QQ 事件里的原值（image/jpeg、image/png…），入库时存了真实类型
         const description = await describeImage(bytes, row.content_type);
-        db.prepare(`UPDATE message_images SET description = ? WHERE id = ?`).run(description, id);
+        // 回写缓存同样带 key：不变量在语句本身可见，不依赖"行来自上方已过滤查询"的推理
+        db.prepare(`UPDATE message_images SET description = ? WHERE id = ? AND key = ?`).run(
+          description,
+          id,
+          key,
+        );
         descriptions.set(id, description);
       } catch (err) {
         // 单张失败单独降级：这张图标注无法识别，其余图片和主链路照常。

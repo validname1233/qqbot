@@ -6,7 +6,8 @@
 
 import type { Tool } from "../tool.js";
 import { callModel } from "../../services/model.js";
-import { memoryKey, pushMemoryNotice } from "../context.js";
+import { pushMemoryNotice } from "../context.js";
+import { tenantKey } from "../../session/key.js";
 import { longTermMemoryStore, type LongTermMemory } from "../memory/long-term.js";
 
 function buildMatchPrompt(query: string, candidates: LongTermMemory[]): string {
@@ -64,7 +65,7 @@ export const deleteMemoryTool: Tool = {
       return "没听清要删除哪条记忆，再说一次吧～";
     }
 
-    const key = memoryKey(ctx.event);
+    const key = tenantKey(ctx.event);
     const candidates = await longTermMemoryStore.list(key);
     if (candidates.length === 0) {
       return "现在还没有记住任何东西，没什么可删的～";

@@ -7,7 +7,7 @@
 import type { MessageContext } from "../types.js";
 import type { StateMachine, Effect } from "../machines/types.js";
 import { SessionStore } from "./store.js";
-import { conversationKey } from "./key.js";
+import { tenantKey } from "./key.js";
 import { guessMachine } from "../machines/guess.js";
 import { holdemMachine } from "../machines/holdem.js";
 
@@ -41,7 +41,7 @@ export type SessionOutcome =
 const NOT_HANDLED: SessionOutcome = { handled: false };
 
 export function runSession(ctx: MessageContext): SessionOutcome {
-  const key = conversationKey(ctx.event);
+  const key = tenantKey(ctx.event);
   const active = store.get(key);
 
   // 情况1：该会话正在某状态机中 → 交给它 step，接管这条消息。

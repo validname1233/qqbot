@@ -9,7 +9,7 @@
 // tool_call_id 反查到本工具名后整条剔除——声明在这里，判定逻辑在注册表。
 
 import type { Tool } from "../tool.js";
-import { memoryKey } from "../context.js";
+import { tenantKey } from "../../session/key.js";
 import { searchCold } from "../memory/sqlite.js";
 
 export const recallMemoryTool: Tool = {
@@ -48,7 +48,7 @@ export const recallMemoryTool: Tool = {
       return "参数错误：至少提供一个关键词。";
     }
 
-    const hits = searchCold(memoryKey(ctx.event), keywords);
+    const hits = searchCold(tenantKey(ctx.event), keywords);
     if (hits.length === 0) {
       // 无结果的明确文案：模型能据此诚实回答"翻过了，没有记录"，不再瞎编
       return `在最近 300 条记忆中检索"${keywords.join("、")}"——没有找到相关内容。`;

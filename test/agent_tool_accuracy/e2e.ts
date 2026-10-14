@@ -228,7 +228,7 @@ const { runAgentTurn } = await import("../../src/agent/loop.js");
 const { registerTool } = await import("../../src/agent/registry.js");
 await import("../../src/services/agent.js"); // 副作用：注册 8 个生产工具
 const { sqliteMemoryStore } = await import("../../src/agent/memory/sqlite.js");
-const { memoryKey } = await import("../../src/agent/context.js");
+const { tenantKey } = await import("../../src/session/key.js");
 const { callModel } = await import("../../src/services/model.js");
 const { setReminderTool } = await import("../../src/agent/tools/set-reminder.js");
 const { searchTool } = await import("../../src/agent/tools/search.js");
@@ -359,7 +359,7 @@ async function runOneCase(
     command: "Agent",
     args: c.input,
   };
-  const key = memoryKey(event); // c2c:eval-… / group:group-eval-…，均带唯一 runTag
+  const key = tenantKey(event); // c2c:eval-… / group:group-eval-…，均带唯一 runTag
   harness.reset(c.toolResults, mockResponses);
 
   // 历史种子：走生产写入路径（带 speaker 前缀的口径由 runAgentTurn 读取时自行处理）

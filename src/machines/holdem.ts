@@ -126,7 +126,7 @@ export const holdemMachine: StateMachine<HoldemState> = {
 
   step(state, ctx): Transition<HoldemState> {
     const event = ctx.event;
-    // 只在群里玩；单聊消息键不上这桌（conversationKey 是 c2c:），理论到不了这里，
+    // 只在群里玩；单聊消息键不上这桌（tenantKey 是 c2c:），理论到不了这里，
     // 防御性放行。
     if (event.type !== "GROUP_MESSAGE_CREATE" && event.type !== "GROUP_AT_MESSAGE_CREATE") {
       return { nextState: state, reply: "", passThrough: true };

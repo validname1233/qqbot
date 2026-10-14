@@ -18,10 +18,10 @@ import { logger } from "../logger.js";
 // 重启后靠 initializeScheduler 从数据库重建。
 const activeTasks = new Map<number, CronTask>();
 
-// 会话键反解：memoryKey 格式（group:<纯群openid> / c2c:<userOpenid>，恰好两段）。
+// 会话键反解：tenantKey 格式（group:<纯群openid> / c2c:<userOpenid>，恰好两段）。
 // 严格按段数校验——多一段（如历史 bug 存进去的人粒度三段键 group:<gid>:<author>）
 // 直接返回 null 跳过并告警：坏键可见，比把作者段当 openid 发给 API（11300 事故）
-// 强得多。键由 task.ts 经 memoryKey 写入。
+// 强得多。键由 task.ts 经 tenantKey 写入。
 function parseSessionKey(
   key: string,
 ): { type: "group" | "c2c"; openid: string } | null {
@@ -33,11 +33,11 @@ function parseSessionKey(
 }
 
 // 构造跑 /Agent 用的最小 fake ctx。runAgentTurn 内部会用到：
-//   memoryKey(event)——读群记忆/人格（group:<gid> 正好与真实群聊同键，报告落群记忆）；
-//   sessionKey(event)——并发闸 + progress-bus（进度推到真实会话，自动生效）；
+//   tenantKey(event)——读群记忆/人格（group:<gid> 正好与真实群聊同键，报告落群记忆），
+//   同时也是并发闸 + progress-bus 的键（2026-10-14 键统一后两者同值）；
 //   authorOpenid/authorName——记忆写入的发言人（定时任务记为"定时任务"）。
 // fake event 的 type 必须与真实事件一致（GROUP_MESSAGE_CREATE / C2C_MESSAGE_CREATE），
-// 否则 memoryKey 的群/私聊分支会走错。
+// 否则 tenantKey 的群/私聊分支会走错。
 function makeFakeContext(task: ScheduledTask): MessageContext | null {
   const target = parseSessionKey(task.sessionKey);
   if (target === null) return null;
@@ -66,7 +66,7 @@ function makeFakeContext(task: ScheduledTask): MessageContext | null {
 }
 
 // 到点要做的事：跑一次 /Agent → 结果推回会话。报告落库由 runAgentTurn
-// 自己做（fake event 的 memoryKey 指向真实会话）——这是刻意保留的副作用：
+// 自己做（fake event 的 tenantKey 指向真实会话）——这是刻意保留的副作用：
 // 之后 /Agent 能 recall 到"今早推过什么"。
 // runAgentTurn 返回的拒绝串（"上一个任务还在跑哦…"）不推送——9 点整恰好
 // 有人在该会话跑 /Agent 时静默跳过本轮，比把拒绝语当任务输出发出去体面。

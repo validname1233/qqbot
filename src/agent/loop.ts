@@ -16,7 +16,7 @@
 //   以后想让模型连续调多轮工具，还是只改 MAX_TOOL_TURNS 这个数字，不用动图结构。
 //
 // 记忆：短期记忆（最近若干条消息）+ 长期记忆占位，单聊/群聊的差异全部收在
-// agent/context.ts 里（memoryKey / formatSpeakerContent / buildLongTermContextText），
+// agent/context.ts 里（formatSpeakerContent / buildLongTermContextText），
 // 本文件的节点只管调用，不用各自判断 event.type。
 
 import { StateGraph, StateSchema, ReducedValue, START, END } from "@langchain/langgraph";
@@ -24,7 +24,7 @@ import { z } from "zod";
 import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
 import type { BotEvent } from "../events/registry.js";
-import { memoryKey, formatSpeakerContent, buildLongTermContextText } from "./context.js";
+import { formatSpeakerContent, buildLongTermContextText } from "./context.js";
 import { expandImagePlaceholders } from "./memory/images.js";
 import { callModel } from "../services/model.js";
 import { logger } from "../services/logger.js";
@@ -32,7 +32,7 @@ import { getSystemPrompt } from "../services/prompts/builder.js";
 import { runTool, toolSchemas, memoryExemptToolNames } from "./registry.js";
 import { sqliteMemoryStore } from "./memory/sqlite.js";
 import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
-import { sessionKey } from "../session/key.js";
+import { tenantKey } from "../session/key.js";
 import { subscribeProgress } from "../services/progress-bus.js";
 import type { ChatMessage } from "./types.js";
 
@@ -96,9 +96,12 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   // 展开懒加载占位符：history 的 user 消息 + 当前 userMessage（/Agent 带图当轮就要看）。
   // 只展开 user 消息——assistant 回复万一复读了 "[图片:17]" 字样，不能被误替换。
   // 展开后的 history 覆盖写回 state：finalize 节点读 state.history，必须拿到展开版。
-  const expandedHistory = dropOrphanToolHead(await expandHistoryImages(state.history));
+  // key 是图片查询的租户边界（IDOR 修复）：服务端从 event 推导，history 与当前消息
+  // 同属一个会话，算一次贯穿两处。
+  const imgKey = tenantKey(event);
+  const expandedHistory = dropOrphanToolHead(await expandHistoryImages(state.history, imgKey));
   step("history 图片占位符展开", t0);
-  const expandedUserText = await expandImagePlaceholders(formattedUserText);
+  const expandedUserText = await expandImagePlaceholders(formattedUserText, imgKey);
   step("当前消息图片占位符展开", t0);
 
   const longTermContext = await buildLongTermContextText(event, state.userText);
@@ -143,12 +146,13 @@ function buildTextWithPlaceholders(text: string, imageIds: number[]): string {
 }
 
 // history 里 user 消息的图片占位符批量展开（并发识图在 expandImagePlaceholders
-// 内部做，这里只是逐条调用）。assistant/tool 消息原样保留。
-async function expandHistoryImages(history: ChatMessage[]): Promise<ChatMessage[]> {
+// 内部做，这里只是逐条调用）。assistant/tool 消息原样保留。key 是图片查询的
+// 租户边界，history 整体同属一个会话，调用方算好传入。
+async function expandHistoryImages(history: ChatMessage[], key: string): Promise<ChatMessage[]> {
   return Promise.all(
     history.map(async (msg) => {
       if (msg.role !== "user" || msg.content === null) return msg;
-      const expanded = await expandImagePlaceholders(msg.content);
+      const expanded = await expandImagePlaceholders(msg.content, key);
       return expanded === msg.content ? msg : { ...msg, content: expanded };
     }),
   );
@@ -343,7 +347,7 @@ export async function runAgentTurn(
   imageIds: number[] = [],
 ): Promise<string> {
   // /stop 中断挂载（拒绝并发语义）：登记失败 = 该会话已有长流程在跑，直接拒绝。
-  const flowKey = sessionKey(ctx.event);
+  const flowKey = tenantKey(ctx.event);
   const controller = beginControlledFlow(flowKey);
   if (controller === null) {
     return "上一个任务还在跑哦～先发 /stop 停掉它，再重新发起吧。";
@@ -357,7 +361,7 @@ export async function runAgentTurn(
   logger.node("agent", `[/Agent] 收到（${userText.slice(0, 40)}${userText.length > 40 ? "…" : ""}）`);
 
   try {
-    const key = memoryKey(ctx.event);
+    const key = tenantKey(ctx.event);
     const history = await sqliteMemoryStore.get(key);
 
     // messages 初始值留空：prepareContext 节点是图的新起点，负责把

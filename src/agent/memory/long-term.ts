@@ -1,5 +1,5 @@
 // agent/memory/long-term.ts —— 长期记忆的 node:sqlite 实现。
-// 单聊/群聊共用一张表，隔离键直接复用 memoryKey()（c2c:<openid> / group:<groupOpenid>），
+// 单聊/群聊共用一张表，隔离键直接复用 tenantKey()（c2c:<openid> / group:<groupOpenid>），
 // 不新增一套隔离逻辑——和短期记忆（sqlite.ts）是同一个隔离粒度，两套表天然同步。
 //
 // 容量策略：每个 key 硬上限 MAX_MEMORIES 条，add() 内部包办 FIFO 淘汰，

@@ -2,7 +2,7 @@
 // 和长期记忆注入的模式一致——按需组装，人格可自定义、功能不可自定义。
 
 import type { BotEvent } from "../../events/registry.js";
-import { memoryKey } from "../../agent/context.js";
+import { tenantKey } from "../../session/key.js";
 import { DEFAULT_PERSONALITY, FUNCTIONAL_PROMPTS, type PromptScene } from "./functional.js";
 
 // 模块内缓存：启动时从数据库加载所有自定义人格，运行时直接从这里读（不再每次查库）
@@ -33,7 +33,7 @@ export function getSystemPrompt(event: BotEvent, scene: PromptScene = "daily"): 
     return functional;
   }
 
-  const key = memoryKey(event);
+  const key = tenantKey(event);
   const personality = personalityCache.get(key) ?? DEFAULT_PERSONALITY;
 
   // 功能规则为空时只返回人格；否则拼接 "人格\n\n功能"

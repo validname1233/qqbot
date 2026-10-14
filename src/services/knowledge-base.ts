@@ -14,27 +14,18 @@
 // 其它设计要点：
 // - 签发不经模型：kb_issue_link 不在 expose 闸门里（mcp.json 的 kb.expose 为空），
 //   "何时发链接"是命令语义——命令代码用 callTool 直调，模型永远看不见这个工具。
-// - scope 按会话粒度算：一群一库 / 单聊一人一库。注意与 sessionKey 的人粒度刻意
-//   不同——知识库是会话共享资产（群里人人可传可查），会话状态才是各玩各的。
+// - scope 按会话粒度算：一群一库 / 单聊一人一库（tenantKey，2026-10-14 键统一后
+//   与全项目共用同一键值——测试环境远端旧 kb: 前缀数据已弃）。
 //   检索（kb_search）不受本命令权限影响，群里人人可用。
 // - 单聊分支不用按钮：消息天然只有本人可见，纯文本链接即安全。
 
 import type { CommandService, MessageContext } from "../types.js";
-import type { BotEvent } from "../events/registry.js";
 import { callTool } from "../agent/mcp/client.js";
 import { flattenMcpResult } from "../agent/mcp/bridge.js";
 import { replyGroupMarkdownWithKeyboard, replyC2CMarkdownWithKeyboard } from "../qq/messages.js";
 import { jumpButton, keyboardOf } from "../qq/keyboard.js";
+import { tenantKey } from "../session/key.js";
 import { logger } from "./logger.js";
-
-// 知识库隔离键（群粒度）。前缀 kb: 与 sessionKey 的 group:/c2c: 命名空间隔开，
-// 避免两套 key 语义混淆；可辨识联合收窄后才能安全访问 groupOpenid。
-export function kbScope(event: BotEvent): string {
-  if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
-    return `kb:group:${event.groupOpenid}`;
-  }
-  return `kb:c2c:${event.authorOpenid}`;
-}
 
 // 签发管理页 URL（群/单聊共用）。失败记 warn 返回 null——MCP 层可用性隔离语义：
 // 端侧服务器离线连累不了命令本身，回降级文案即可。
@@ -59,7 +50,7 @@ export const knowledgeBaseService: CommandService = {
 
   async handle(ctx: MessageContext): Promise<string | null> {
     const event = ctx.event;
-    const scope = kbScope(event);
+    const scope = tenantKey(ctx.event);
 
     if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
       // 闸①：先验身份再签发——不为无权者产生 token。null（member_role 未下发）

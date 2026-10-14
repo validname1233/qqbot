@@ -49,7 +49,7 @@ export function flattenMcpResult(result: {
 // 桥接核心：包装一个 MCP 工具为本地 Tool（§3.2）。
 // name 加 mcp_<server>_ 前缀防与原生工具撞名（DeepSeek 工具名字符集安全）；
 // inputSchema 与 parameters 同构直传；ctx 透传给适配器（浏览器类适配器需要
-// event 做页面池人粒度隔离——B 档演进口子）。
+// event 做页面池租户隔离——B 档演进口子）。
 // progressNote 来自 mcp.json 该服务器的 progressNotes 配置（工具名 → 文案，
 // 与服务器注册同源，不在代码里硬编码工具名）；未配置的工具落默认文案。
 export function wrapMcpTool(

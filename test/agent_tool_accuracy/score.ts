@@ -24,6 +24,11 @@ export interface Expected {
   // 多解用例：true 时「不调用任何工具」也算选择通过（与 paths 任一命中为或关系）。
   // 用于金标存在「直接回答 / 检索降级」两种可接受行为的场景（如长期记忆未注入时）。
   allowNoTool?: boolean;
+  // 宽松口径（金标修订 2026-10-13）：true 时匹配退化为「子序列覆盖」——
+  // 生成调用（按发生顺序）按序覆盖金标 path 的全部工具即算通过；多出的调用
+  // （get_time/重复 search/拆多次记忆等）与轮次先后都不判错。用于「危害小的
+  // 过度调用」口径；漏调、调错工具仍判错。后续收紧口径删掉标记即可。
+  allowExtraCalls?: boolean;
 }
 
 export type RuleKind =
@@ -122,12 +127,18 @@ function roundsOf(steps: ToolStep[]): number[] {
 }
 
 // 在全部可接受 path 里找命中的那条；返回索引，未命中返回 null。
-// 匹配条件：生成调用的轮集合 === path 的轮集合，且每轮内工具名多重集合相等。
+// 严格口径：生成调用的轮集合 === path 的轮集合，且每轮内工具名多重集合相等。
 // 轮集合必须完全一致——path 只写了 round1 而模型拆成两轮，不算命中（歧义分支
 // 需要写多条 path 表达，cases.json 的 multi_tool 类就是这么做的）。
-export function matchPaths(paths: ToolStep[][], calls: ToolCallRecord[]): number | null {
+// 宽松口径（allowExtraCalls）：改用 coversPath 的「子序列覆盖」——金标工具按序
+// 都被覆盖即命中，多余调用与轮次先后不判错；漏调、调错工具仍不命中。
+export function matchPaths(paths: ToolStep[][], calls: ToolCallRecord[], allowExtraCalls = false): number | null {
   for (let i = 0; i < paths.length; i++) {
     const path = paths[i];
+    if (allowExtraCalls) {
+      if (coversPath(path, calls)) return i;
+      continue;
+    }
     const callRounds = roundsOf(calls.map((c) => ({ tool: c.name, round: c.round })));
     const pathRounds = roundsOf(path);
     if (callRounds.length !== pathRounds.length || callRounds.some((r, j) => r !== pathRounds[j])) {
@@ -143,7 +154,42 @@ export function matchPaths(paths: ToolStep[][], calls: ToolCallRecord[]): number
   return null;
 }
 
-// 诊断用：一条 path 与实际调用的「按轮按名的最大交集」调用数（selection 失败时
+// 覆盖模式匹配：生成调用按发生顺序（round 升序、轮内原序）能否按序覆盖 path 的
+// 全部工具。path 按轮次分组（同轮并列 = 顺序无关的一袋工具）；对每一袋，在生成
+// 序列的剩余部分里贪心找「凑齐整袋」的最小窗口——窗口里夹着的其他调用（get_time、
+// 重复 search 等）视为无害多余调用放行；凑不齐即漏调，判不覆盖。
+function coversPath(path: ToolStep[], calls: ToolCallRecord[]): boolean {
+  const seq = [...calls].sort((a, b) => a.round - b.round).map((c) => c.name);
+  // path 步按「连续同轮」分袋
+  const bags: string[][] = [];
+  let lastRound = -1;
+  for (const step of path) {
+    if (step.round !== lastRound || bags.length === 0) {
+      bags.push([step.tool]);
+      lastRound = step.round;
+    } else {
+      bags[bags.length - 1].push(step.tool);
+    }
+  }
+  let cursor = 0;
+  for (const bag of bags) {
+    const need: Record<string, number> = {};
+    for (const n of bag) need[n] = (need[n] ?? 0) + 1;
+    let remaining = bag.length;
+    const got: Record<string, number> = {};
+    while (cursor < seq.length && remaining > 0) {
+      const name = seq[cursor];
+      cursor++;
+      if ((need[name] ?? 0) > (got[name] ?? 0)) {
+        got[name] = (got[name] ?? 0) + 1;
+        remaining--;
+      }
+      // 窗口内其他调用：多余，跳过继续扩窗
+    }
+    if (remaining > 0) return false; // 剩余部分耗尽也没凑齐 → 漏调
+  }
+  return true;
+}
 // 算 precision/recall 用；selection 通过时恒等于 path 步数）。
 function diagnosticMatches(path: ToolStep[], calls: ToolCallRecord[]): number {
   let matched = 0;
@@ -367,7 +413,7 @@ export function scoreCase(input: {
   const schemaResults = calls.map((c) => ({ call: c, check: checkSchema(c.name, c.parsed) }));
   const schemaValid = schemaResults.filter((s) => s.check.status === "pass").length;
 
-  const matchedPathIndex = matchPaths(testCase.expected.paths, calls);
+  const matchedPathIndex = matchPaths(testCase.expected.paths, calls, testCase.expected.allowExtraCalls === true);
   const noToolAccepted =
     !testCase.expected.shouldCallTools ||
     testCase.expected.allowNoTool === true ||

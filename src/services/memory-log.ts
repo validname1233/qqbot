@@ -12,7 +12,8 @@
 // /Agent 消息自带的图片由 agentService.handle 自己持久化，两条路径互不重叠。
 
 import type { ObserverService } from "../types.js";
-import { memoryKey, formatSpeakerContent } from "../agent/context.js";
+import { formatSpeakerContent } from "../agent/context.js";
+import { tenantKey } from "../session/key.js";
 import { sqliteMemoryStore } from "../agent/memory/sqlite.js";
 import { persistEventImages } from "../agent/memory/images.js";
 
@@ -44,7 +45,7 @@ export const memoryLogObserver: ObserverService = {
       event,
     );
     await sqliteMemoryStore.append(
-      memoryKey(event),
+      tenantKey(event),
       { openid: event.authorOpenid, name: event.authorName },
       { role: "user", content },
     );
