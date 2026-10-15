@@ -5,7 +5,7 @@
 // 六件套工具全部经这里拿路径，工具自身不重复实现校验——校验的单一真相源。
 
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import type { BotEvent } from "../../events/registry.js";
 import { tenantKey } from "../../session/key.js";
@@ -15,10 +15,27 @@ import { config } from "../../config.js";
 // 不把原始 openid 拼进路径（防路径注入/信息泄露），固定长度也免得文件系统名长限制。
 // 惰性创建（首次使用时 mkdir），调用方再取 realpath 作为校验的"根真身"——
 // 根自己被换链接的极端情况下比较两端点都不可信，两端都取真身才有意义。
+//
+// 属主修正（2026-10-15 联调发现）：bot 常以 root 跑，mkdir 出的目录默认归 root，
+// 而容器内 runner 是 uid 1000——属主错位时容器里对 workspace 没有写权限
+//（shell 重定向/touch/mkdir 全部 Permission denied）。根治法：新建目录时
+// 显式 chmod 0o777——目录可写交给进程自身权限控制（bot 是 root 无所谓；
+// 容器内 runner 只要"别人不拒绝"就能写），比试图对齐 uid 简单且跨平台。
+// 已存在的旧目录不改（chown/chmod 需要权限且一次性手动处理更直接）。
 export function workspaceDirFor(event: BotEvent): string {
   const hash = createHash("sha256").update(tenantKey(event)).digest("hex").slice(0, 32);
   const dir = join(config.workspaceRoot, hash);
-  mkdirSync(dir, { recursive: true });
+  const existed = existsSync(dir);
+  mkdirSync(dir, { recursive: true, mode: 0o777 });
+  // recursive mkdir 下 mode 只作用于最终目录且受 umask 影响（root 的 umask 022
+  // 会吃掉写位），mkdir 后补一次显式 chmod 才是可靠的。
+  if (!existed) {
+    try {
+      chmodSync(dir, 0o777);
+    } catch {
+      // chmod 失败不阻塞（非 root 部署下目录本来就归自己，无需修）
+    }
+  }
   return dir;
 }
 
