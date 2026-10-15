@@ -27,6 +27,14 @@ import { jumpButton, keyboardOf } from "../qq/keyboard.js";
 import { tenantKey } from "../session/key.js";
 import { logger } from "./logger.js";
 
+// 远端 kb 服务器的 scope 契约：强制 kb: 前缀（kb:group:<openid> / kb:c2c:<openid>），
+// 服务端有格式校验，裸 tenantKey 会被拒（2026-10-15 实机报错确认）。本地推导
+// 仍统一走 tenantKey，跨服务边界时在此包一层命名空间——键统一的"一个真相源、
+// 两个发射形状"形态。
+function kbScope(event: Parameters<typeof tenantKey>[0]): string {
+  return `kb:${tenantKey(event)}`;
+}
+
 // 签发管理页 URL（群/单聊共用）。失败记 warn 返回 null——MCP 层可用性隔离语义：
 // 端侧服务器离线连累不了命令本身，回降级文案即可。
 async function issueLink(scope: string): Promise<string | null> {
@@ -50,7 +58,7 @@ export const knowledgeBaseService: CommandService = {
 
   async handle(ctx: MessageContext): Promise<string | null> {
     const event = ctx.event;
-    const scope = tenantKey(ctx.event);
+    const scope = kbScope(ctx.event);
 
     if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
       // 闸①：先验身份再签发——不为无权者产生 token。null（member_role 未下发）
