@@ -14,6 +14,8 @@ import { clearAllMemoriesTool } from "../agent/tools/clear-all-memories.js";
 import { agentOpenPageTool } from "../agent/tools/open-page.js";
 import { getTimeTool } from "../agent/tools/get-time.js";
 import { recallMemoryTool } from "../agent/tools/recall-memory.js";
+import { workspaceTaskTool } from "../agent/tools/workspace-task.js";
+import { config } from "../config.js";
 
 registerTool(setReminderTool);
 registerTool(searchTool);
@@ -30,6 +32,11 @@ registerTool(getTimeTool);
 // recall_memory：冷存储检索（300 条原始对话按需翻查，两级记忆方案
 // docs/features/2026-09-05-短期记忆两级化方案.md）。只挂全局表——深检不翻用户旧对话。
 registerTool(recallMemoryTool);
+// workspace_task：工作台委派入口（决策八）。受总开关控制——关闭时主 Agent
+// 的工具表里没有它，模型无从调用（比注册后在 run 里拒绝更干净）。
+if (config.workspaceEnabled) {
+  registerTool(workspaceTaskTool);
+}
 
 export const agentService: CommandService = {
   name: "Agent",

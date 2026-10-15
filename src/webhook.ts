@@ -13,6 +13,7 @@ import { initializeScheduler } from "./services/scheduler/cron.js";
 import { initializePersonalities } from "./services/prompts/store.js";
 import { pruneOldLogs } from "./services/logger.js";
 import { initializeMcpTools } from "./agent/mcp/initialize.js";
+import { initializeWorkspace } from "./services/workspace/run-task.js";
 import { logger } from "./services/logger.js";
 
 // 本地监听端口。只绑 127.0.0.1，不对公网暴露——外面只能经 nginx 进来。
@@ -156,6 +157,11 @@ await pruneOldLogs();
 // 连不上单个服务器只记 warn 跳过，不连累启动。await 是有意的——工具吸收完再
 // 对外收流量，避免第一波请求看到不完整的工具表。
 await initializeMcpTools();
+
+// 工作台孤儿容器清扫（决策二兜底）：上次进程死亡可能遗留 qqbot-exec- 容器，
+// 全局并发 1 保证启动时不存在合法在跑的任务——前缀匹配到的必是遗留，清掉。
+// 失败不阻塞启动（run-task 内部已兜）。
+await initializeWorkspace();
 
 server.listen(PORT, HOST, () => {
   logger.info("webhook", `监听 http://${HOST}:${PORT}（经 nginx 反代对外提供 HTTPS）`);

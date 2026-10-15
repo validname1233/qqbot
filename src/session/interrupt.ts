@@ -36,3 +36,12 @@ export function abortFlow(key: string): boolean {
   running.delete(key);
   return true;
 }
+
+// 反查某租户当前在跑流程的 AbortSignal（没有则 undefined）。
+// 用途：工作台子任务（workspace_task 委派模式）运行在主 Agent 流程内部，
+// MessageContext 不携带 signal——工具执行时用它把"爹的闸"找出来挂进子图，
+// /stop 拉主流程的闸 → signal 传导 → 子图 → exec 工具 docker kill。
+// 独立入口（/代码）自己登记后同样能查到自己，两条入口统一走这一个函数。
+export function currentFlowSignal(key: string): AbortSignal | undefined {
+  return running.get(key)?.signal;
+}

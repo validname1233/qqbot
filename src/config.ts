@@ -182,6 +182,39 @@ export const config = {
   //   mcpCallTimeoutMs —— 单次 tools/call 超时，防远程服务器卡死拖垮深检预算。
   mcpServerConfigs: loadMcpConfig(),
   mcpCallTimeoutMs: optionalEnvNumber("MCP_CALL_TIMEOUT_MS", 30000),
+  // 租户 Python 工作台（/代码 与 workspace_task 委派，方案见
+  // docs/features/2026-10-10-租户Python工作台设计方案.md）。全部可选：
+  //   workspaceEnabled     —— 总开关，默认 false；关闭时 /代码 提示未开启、
+  //                           workspace_task 不注册进主 Agent 工具表。
+  //   workspaceRoot        —— workspace 根目录（每租户一个 sha256(tenantKey) 子目录）。
+  //                           生产默认 /var/lib/qqbot-workspaces；本地测试可指
+  //                           ./data/test-workspaces 之类。
+  //   workspaceImage       —— 执行镜像（GHCR 的 qqbot-python，白名单库由镜像内容决定）。
+  //   workspaceMemory/Cpus/PidsLimit —— 容器 cgroup 限额（内存池/CPU 上限/fork 兜底）。
+  //   workspaceCmdTimeoutMs —— 单条命令墙钟（容器内 timeout 自杀，docker exec 无单独 kill）。
+  //   workspaceBudgetMs    —— 单任务总预算：图轮次边界检查 + 容器 sleep 自毁定时器。
+  //   workspaceMaxTurns    —— 子 Agent 图的工具轮次上限。
+  //   workspaceOutputLimit —— 单条命令 stdout/stderr 各自的截断上限（字节）。
+  //   workspaceReadMaxLines/ReadMaxBytes —— read_file 单次输出上限（双上限先到为准）。
+  //   workspaceGrepMaxMatches/GlobMaxResults —— 检索类工具的结果条数上限。
+  //   workspaceMaxFileBytes/DiskQuotaBytes/MaxFiles —— 写入前置配额（单文件/总量/文件数）。
+  workspaceEnabled: optionalEnv("WORKSPACE_ENABLED", "false") === "true",
+  workspaceRoot: optionalEnv("WORKSPACE_ROOT", "/var/lib/qqbot-workspaces"),
+  workspaceImage: optionalEnv("WORKSPACE_IMAGE", "ghcr.io/OWNER/qqbot-python:latest"),
+  workspaceMemory: optionalEnv("WORKSPACE_MEMORY", "256m"),
+  workspaceCpus: optionalEnv("WORKSPACE_CPUS", "1"),
+  workspacePidsLimit: optionalEnvNumber("WORKSPACE_PIDS_LIMIT", 64),
+  workspaceCmdTimeoutMs: optionalEnvNumber("WORKSPACE_CMD_TIMEOUT_MS", 60000),
+  workspaceBudgetMs: optionalEnvNumber("WORKSPACE_BUDGET_MS", 300000),
+  workspaceMaxTurns: optionalEnvNumber("WORKSPACE_MAX_TURNS", 12),
+  workspaceOutputLimit: optionalEnvNumber("WORKSPACE_OUTPUT_LIMIT", 65536),
+  workspaceReadMaxLines: optionalEnvNumber("WORKSPACE_READ_MAX_LINES", 500),
+  workspaceReadMaxBytes: optionalEnvNumber("WORKSPACE_READ_MAX_BYTES", 32768),
+  workspaceGrepMaxMatches: optionalEnvNumber("WORKSPACE_GREP_MAX_MATCHES", 50),
+  workspaceGlobMaxResults: optionalEnvNumber("WORKSPACE_GLOB_MAX_RESULTS", 200),
+  workspaceMaxFileBytes: optionalEnvNumber("WORKSPACE_MAX_FILE_BYTES", 1048576),
+  workspaceDiskQuotaBytes: optionalEnvNumber("WORKSPACE_DISK_QUOTA_BYTES", 104857600),
+  workspaceMaxFiles: optionalEnvNumber("WORKSPACE_MAX_FILES", 200),
 } as const;
 
 // 延迟校验：SEARCH_PROVIDER=aliyun 时阿里三项必填。放在 config 定义之后立即执行，

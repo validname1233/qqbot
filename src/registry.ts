@@ -15,6 +15,7 @@ import { agentService } from "./services/agent.js";
 import { scheduledTaskService } from "./services/scheduler/task.js";
 import { setPersonalityService } from "./services/prompts/command.js";
 import { deepSearchService } from "./services/deep-search.js";
+import { codeWorkspaceService } from "./services/code-workspace.js";
 import { knowledgeBaseService } from "./services/knowledge-base.js";
 import { helpService } from "./services/help.js";
 import { stopService } from "./services/stop.js";
@@ -46,6 +47,9 @@ registerCommand(setPersonalityService);
 // 与 /Agent 的浅检索互补；慢（几十秒）但深。显式命令触发，设计文档见
 // docs/superpowers/specs/2026-08-24-deep-web-browsing-design.md。
 registerCommand(deepSearchService);
+// 代码工作台：兜底入口（主路径是主 Agent 的 workspace_task 委派，决策八）。
+// 任务级容器 + 六件套工具，方案见 docs/features/2026-10-10-租户Python工作台设计方案.md。
+registerCommand(codeWorkspaceService);
 // 知识库管理：直调端侧 MCP kb_issue_link 返回管理页链接（不经模型，expose 为空）。
 // 群一群一库 / 单聊一人一库；实现与设计见 docs/features/2026-09-04-知识库RAG-MCP方案.md。
 registerCommand(knowledgeBaseService);

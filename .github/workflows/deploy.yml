@@ -8,8 +8,37 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 工作台执行镜像：在 Actions 构建机 build（重活：拉基础镜像/装库），push 到
+  # GHCR（免 GITHUB_TOKEN 之外的任何配置）；服务器只 docker pull（轻活）。
+  # 2G 服务器绝不在本地 build——内存峰值会撞 OOM（方案 §2 决策五）。
+  build-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # 允许 GITHUB_TOKEN 推送 GHCR
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push python-runner image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker/python-runner
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/qqbot-python:latest
+            ghcr.io/${{ github.repository_owner }}/qqbot-python:${{ github.sha }}
+
   deploy:
     runs-on: ubuntu-latest # GitHub 云端 Linux 运行环境
+    needs: build-image   # 镜像推完再部署（服务器 pull 到的必是最新）
 
     steps:
       # 1. 检出仓库代码
@@ -54,6 +83,10 @@ jobs:
 
             # 装依赖（含 devDependencies 里的 tsx，webhook 靠它跑源码）。
             npm install
+
+            # 工作台执行镜像：拉最新（GHCR 分层缓存，通常只传变化的层；几分钟内
+            # 完成）。首次需服务器上 docker login ghcr.io（read:packages PAT）。
+            docker pull ghcr.io/${{ github.repository_owner }}/qqbot-python:latest || echo "镜像拉取失败（不影响 bot 部署，工作台功能将不可用）"
 
             # 不编译：tsconfig 是 noEmit，直接用 tsx 跑 src/webhook.ts。
             # 首次没有该进程时用 start 建立，之后都走 restart。
