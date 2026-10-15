@@ -15,6 +15,7 @@ type GroupEvent = {
   authorRole: "member" | "admin" | "owner" | null;
   authorName: string;
   msgId: string;
+  mentionsBot: boolean;
 };
 
 function msg(openid: string, name: string, text: string): MessageContext {
@@ -27,6 +28,7 @@ function msg(openid: string, name: string, text: string): MessageContext {
     authorRole: null,
     authorName: name,
     msgId: "m",
+    mentionsBot: false, // 测试消息无 @ 语义
   };
   return { event, text, command: text.startsWith("/") ? text.slice(1) : null, args: "" };
 }

@@ -16,6 +16,7 @@ import { scheduledTaskService } from "./services/scheduler/task.js";
 import { setPersonalityService } from "./services/prompts/command.js";
 import { deepSearchService } from "./services/deep-search.js";
 import { codeWorkspaceService } from "./services/code-workspace.js";
+import { stripAtBotMention } from "./events/GROUP_MESSAGE_CREATE/index.js";
 import { knowledgeBaseService } from "./services/knowledge-base.js";
 import { helpService } from "./services/help.js";
 import { stopService } from "./services/stop.js";
@@ -131,6 +132,10 @@ export async function runCommand(ctx: MessageContext): Promise<string | null> {
   //                 触发，@ 就是意图表达，语义同单聊）
   //   群里没 @bot → 不搭话（GROUP_MESSAGE_CREATE 全量推送，普通聊天不插嘴——
   //                 当年删兜底 service 的原因就是它）
+  // 群@ 的两条形态（2026-10-15）：后台没开"接收所有消息"时 @ 走
+  // GROUP_AT_MESSAGE_CREATE；开了之后 @ 也走 GROUP_MESSAGE_CREATE（mentions
+  // 数组带 is_you:true，事件层提炼为 mentionsBot）——两条路都转发 /Agent，
+  // 后者转发前剥离 <@openid> 标记。
   // 纯图片/空文本不进（Agent 对空问题无诉求）；状态机锁定的会话不会走到这里
   //（runSession 在上游已拦截全部消息，passThrough 放行的才会回落到本分支）。
   // 转发用的 ctx 把正文从 text 挪进 args：agentService.handle 以 args 为问题源，
@@ -138,8 +143,13 @@ export async function runCommand(ctx: MessageContext): Promise<string | null> {
   if (ctx.command === null) {
     const c2c = ctx.event.type === "C2C_MESSAGE_CREATE";
     const groupAt = ctx.event.type === "GROUP_AT_MESSAGE_CREATE";
-    if ((c2c || groupAt) && ctx.text.trim() !== "") {
-      return agentService.handle({ ...ctx, command: "Agent", args: ctx.text });
+    const groupMessageAtBot = ctx.event.type === "GROUP_MESSAGE_CREATE" && ctx.event.mentionsBot;
+    if ((c2c || groupAt || groupMessageAtBot) && ctx.text.trim() !== "") {
+      const question =
+        groupMessageAtBot ? stripAtBotMention(ctx.text) : ctx.text;
+      // 剥完 @ 标记可能只剩空白（纯 @ 没说话）——视为无诉求，不进 Agent。
+      if (question.trim() === "") return null;
+      return agentService.handle({ ...ctx, command: "Agent", args: question });
     }
     return null;
   }

@@ -53,6 +53,7 @@ function makeFakeContext(task: ScheduledTask): MessageContext | null {
           content: "",
           attachments: [],
           msgId: "",
+          mentionsBot: false, // cron 构造的消息没有 @ 语义，不触发 @ 相关路由分支
         }
       : {
           type: "C2C_MESSAGE_CREATE" as const,
