@@ -29,6 +29,11 @@ export function parseEvent(raw: RawEvent): BotEvent | null {
   // 事件心跳：每条消息都会打，严格说够 debug 级，但单进程长驻服务留 info——
   // "链路活着"的可见性优先于安静（级别语义讨论见 logger.ts 头注释）。
   logger.info("events", `收到事件: ${raw.t}`);
+  // 原始 payload 的 debug 打印（2026-10-15 @语义排查）：开启"接收所有消息"后
+  // @消息也走 GROUP_MESSAGE_CREATE，@ 的标记形态（content 内嵌 <@!..> 还是
+  // 独立 mentions 字段、bot 与真人是否可区分）需要看真实数据才能定解析方案。
+  // 常态留 debug 级（默认 info 不打），排查期 LOG_LEVEL=debug 打开。
+  logger.debug("events", `payload: ${JSON.stringify(raw.d)}`);
 
   const def = eventDefs.find((d) => d.t === raw.t);
   if (def === undefined) return null;
