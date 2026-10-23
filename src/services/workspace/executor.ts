@@ -50,6 +50,14 @@ function runDocker(
   return new Promise((resolve) => {
     const limit = opts?.outputLimit ?? config.workspaceOutputLimit;
     const proc = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
+    // debug：实际下发的 docker argv（短行，进控制台方便实时跟）。带空格的参数
+    // 加引号还原成可读命令行——排查"到底给 docker 传了什么"的第一现场。
+    if (config.logLevel === "debug") {
+      logger.debug(
+        "workspace",
+        `docker ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`,
+      );
+    }
     let stdout = "";
     let stderr = "";
     let stdoutTruncated = false;
