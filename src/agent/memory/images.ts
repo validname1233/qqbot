@@ -38,21 +38,8 @@ mkdirSync(IMAGE_DIR, { recursive: true });
 // 连接，node:sqlite 允许同进程多连接打同一文件。
 const db = new DatabaseSync(join(DB_DIR, config.memoryDbFile));
 
-// v8 迁移（一次性，总方案模块一 §1.3）：旧表没有 seq/fileid 列，CREATE IF
-// NOT EXISTS 对已存在的旧表会整段短路，后续 INSERT 撞 "no such column: seq"
-//（2026-10-28 服务器首跑实锤）。因此检测到旧 schema 时 DROP 重建——只做一次
-//（新 schema 就位后 table_info 能查到 seq，不再触发）。若写成无条件 DROP，
-// 每次重启都清空描述缓存、历史图片全部重新识图——缓存红线被部署周期击穿。
-// 旧表数据仅为识图描述缓存，迁移期一次性丢失 = 下次重新识图，可接受。
-const columns = db.prepare(`PRAGMA table_info(message_images)`).all() as Array<{ name: string }>;
-const columnNames = new Set(columns.map((c) => c.name));
-if (columns.length > 0 && !columnNames.has("seq")) {
-  db.exec(`DROP TABLE message_images`);
-  logger.warn("images", "检测到旧版 message_images（无 seq 列），已 DROP 重建——识图描述缓存清空，下次装配重新识图");
-}
-
-// fileid（图片全局唯一身份，排查/跨消息比对用，不做约束键）、
-// seq（事件内附件数组序，UNIQUE 成员）。
+// v8 重建（测试环境无兼容负担，与旧表 DROP 同批）：fileid（图片全局唯一身份，
+// 排查/跨消息比对用，不做约束键）、seq（事件内附件数组序，UNIQUE 成员）。
 db.exec(`
   CREATE TABLE IF NOT EXISTS message_images (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
