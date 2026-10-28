@@ -38,8 +38,15 @@ mkdirSync(IMAGE_DIR, { recursive: true });
 // 连接，node:sqlite 允许同进程多连接打同一文件。
 const db = new DatabaseSync(join(DB_DIR, config.memoryDbFile));
 
-// v8 重建（测试环境无兼容负担，与旧表 DROP 同批）：fileid（图片全局唯一身份，
-// 排查/跨消息比对用，不做约束键）、seq（事件内附件数组序，UNIQUE 成员）。
+// v8 重建（测试环境无兼容负担，与主表 DROP 同批处理——总方案模块一 §1.3）：
+// 旧表没有 seq/fileid 列，CREATE IF NOT EXISTS 对已存在的旧表会整段短路，
+// 后续 INSERT 直接撞 "no such column: seq"（2026-10-28 服务器首跑实锤）。
+// 因此先 DROP 再建——旧表数据只有已识图的描述缓存，丢失后果是下次重新识图
+//（缓存红线针对"运行期不重写"，schema 重建期的一次性丢失可接受）。
+db.exec(`DROP TABLE IF EXISTS message_images`);
+
+// fileid（图片全局唯一身份，排查/跨消息比对用，不做约束键）、
+// seq（事件内附件数组序，UNIQUE 成员）。
 db.exec(`
   CREATE TABLE IF NOT EXISTS message_images (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -40,10 +40,12 @@ const ev = {
 } as unknown as BotEvent;
 const ctx: MessageContext = { event: ev, text: "帮我搜下周末天气", command: "Agent", args: "帮我搜下周末天气" };
 const proj = await projectWindow(ctx);
+const firstMsg = proj.messages[0];
+const secondMsg = proj.messages[1];
 check("② 投影 2 条消息（1 批 + 1 裸 assistant）", proj.messages.length === 2);
-check("② 首条是 user 批（blob）", proj.messages[0]?.role === "user" && proj.messages[0].content.includes('"speaker":"小明"'));
-check("② 批内含两行（m1+m2，m3 已排除）", (proj.messages[0]?.content.match(/\n/g) ?? []).length === 1);
-check("② 次条是裸 assistant", proj.messages[1]?.role === "assistant" && proj.messages[1].content === "还没呢，刚准备去");
+check("② 首条是 user 批（blob）", firstMsg?.role === "user" && (firstMsg.content ?? "").includes('"speaker":"小明"'));
+check("② 批内含两行（m1+m2，m3 已排除）", ((firstMsg?.content ?? "").match(/\n/g) ?? []).length === 1);
+check("② 次条是裸 assistant", secondMsg?.role === "assistant" && secondMsg.content === "还没呢，刚准备去");
 
 // ③ reset：把预算临时压到极小，投影应触发 reset 并清空
 const realBudget = config.contextTokenBudget;
