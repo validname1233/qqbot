@@ -204,9 +204,11 @@ export function lastChatAt(key: string): number | null {
   return row?.created_at ?? null;
 }
 
-// 全部租户键（restart-gap 标记用）。
+// 全部租户键（restart-gap 标记用）。断痕行是 process kind（不进 L1 投影，
+// 否则装配层会把【记录中断】当 bot 历史回复透出，模型顺着回应它——
+// 2026-10-28 真机事故；L2 可见性由 origin=restart-gap 保住）。
 const distinctKeysStmt = db.prepare(
-  `SELECT DISTINCT key FROM conversation_events WHERE kind IN ('chat_user', 'chat_bot')`,
+  `SELECT DISTINCT key FROM conversation_events WHERE kind IN ('chat_user', 'chat_bot', 'process')`,
 );
 
 export function distinctChatKeys(): string[] {

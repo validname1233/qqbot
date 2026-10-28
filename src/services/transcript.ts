@@ -13,8 +13,9 @@
 
 import type { BotEvent } from "../events/registry.js";
 import { tenantKey } from "../session/key.js";
-import { appendEvent, distinctChatKeys } from "../agent/memory/events.js";
+import { appendEvent, chatRows, distinctChatKeys } from "../agent/memory/events.js";
 import { persistEventImages } from "../agent/memory/images.js";
+import { isImageAttachment } from "../events/attachments.js";
 import { logger } from "./logger.js";
 
 // ---------- 入站收口 ----------
@@ -28,6 +29,20 @@ export async function recordInbound(event: BotEvent): Promise<void> {
     // 先持久化附件拿 id 列表（图片下载 ≤10s 超时兜底），再写 chat_user 行。
     // persistEventImages 内部 UNIQUE 吸收 QQ 重推的重复下载。
     const attachmentIds = await persistEventImages(event);
+    if (attachmentIds.length === 0 && event.attachments.some(isImageAttachment)) {
+      // 下载全军覆没（超时/过大/网络）：图片行一个都没建。若此时照常落
+      // chat_user（attachmentIds=null），图片信息从此丢失——QQ 的 URL 有时效，
+      // 事后无图可查。补救：删除本条消息已有的行（若 UNIQUE 撞上重推的旧成功
+      // 行则保留旧的），强制下次重推时重走完整下载。代价是这条消息暂时不在
+      // L2（可接受——它带图，投影里本就缺半边）。
+      const existing = chatRows(key, 1).find((r) => r.qqMsgId === event.msgId);
+      if (existing === undefined) {
+        logger.warn("memory", `图片全部下载失败，消息暂不入库（msgId=${event.msgId.slice(0, 12)}…），等待重推补全`);
+        return;
+      }
+      // 重推且旧行存在（之前有图成功过）——沿用旧行，本条不重复写。
+      return;
+    }
     appendEvent({
       key,
       kind: "chat_user",
@@ -75,12 +90,15 @@ export function recordOutbound(
 
 // 进程启动时对每个已知租户写一行"记录中断"标记（failover/重启的 L2 断痕显式化，
 // recall 翻到此处知道"不是没人说话，是记录断了"）。origin=restart-gap。
+// kind=process：断痕要留在 L2 档案，但绝不能进 L1 投影——2026-10-28 真机
+// 事故：定为 chat_bot 时装配层把它当 bot 历史回复透出成裸 assistant，
+// 模型在群里回应【记录中断：进程重启】。
 export function writeRestartMarkers(): void {
   const keys = distinctChatKeys();
   const text = "【记录中断：进程重启】";
   for (const key of keys) {
     try {
-      appendEvent({ key, kind: "chat_bot", role: "assistant", content: text, origin: "restart-gap" });
+      appendEvent({ key, kind: "process", role: "assistant", content: text, origin: "restart-gap" });
     } catch (err) {
       logger.warn("memory", `restart-gap 写入失败（key=${key.slice(0, 10)}…）：${err instanceof Error ? err.message : err}`);
     }
