@@ -66,6 +66,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22 # SSH 端口。若你改过非默认端口，换成 ${{ secrets.SERVER_PORT }}
+          # 命令超时：docker pull 的层解压在 2G 服务器上可能要几分钟，action
+          # 默认超时太短会把整个部署掐死在 pull 中途（pm2 restart 都执行不到）。
+          command_timeout: 10m
           script: |
             # 引入 NVM / Node 环境变量，确保非交互式 SSH 能够识别 npm 和 pm2 命令
             export NVM_DIR="$HOME/.nvm"
@@ -84,9 +87,10 @@ jobs:
             # 装依赖（含 devDependencies 里的 tsx，webhook 靠它跑源码）。
             npm install
 
-            # 工作台执行镜像：拉最新（GHCR 分层缓存，通常只传变化的层；几分钟内
-            # 完成）。首次需服务器上 docker login ghcr.io（read:packages PAT）。
-            docker pull ghcr.io/${{ github.repository_owner }}/qqbot-python:latest || echo "镜像拉取失败（不影响 bot 部署，工作台功能将不可用）"
+            # 工作台执行镜像：拉最新。90 秒窗口——层解压在 2G 机器上偶尔很慢，
+            # 拉不完就留给下次（bot 用本地已有镜像照常跑，不阻塞部署节奏）。
+            # 首次需服务器上 docker login ghcr.io（read:packages PAT）。
+            timeout 90 docker pull ghcr.io/${{ github.repository_owner }}/qqbot-python:latest || echo "镜像更新未完成（本地镜像仍可用，下次部署重试）"
 
             # 不编译：tsconfig 是 noEmit，直接用 tsx 跑 src/webhook.ts。
             # 首次没有该进程时用 start 建立，之后都走 restart。
