@@ -96,7 +96,11 @@ async function downloadImage(url: string): Promise<Uint8Array | null> {
 // 窗口外图片清理：删行 + 删文件成对。锚点（v8）：最近 N 条 chat 行（与 recall
 // 深度同源 RECALL_DEPTH_N）内被 attachment_ids 引用的图片保留；更早的清掉。
 // 引用列表从 conversation_events 现查（chat 行的 attachment_ids 列）。
-function pruneImagesOutsideWindow(key: string): void {
+// ★ 调用时机契约：必须在 chat_user 行（引用关系）写入【之后】调用——
+// export 给 transcript.recordInbound 在落行后显式调用。曾放在
+// persistEventImages 尾部，导致"图片入库 → 行被当场误删（尚无引用）"的
+// 时序事故（2026-10-28 真机：入库日志存在但表空、引用全部悬空）。
+export function pruneImagesOutsideWindow(key: string): void {
   const rows = chatRows(key, config.recallDepthN);
   const referenced = new Set<number>();
   for (const row of rows) {
@@ -127,6 +131,10 @@ function pruneImagesOutsideWindow(key: string): void {
 //（顺序与 attachments 中图片顺序一致，供 attachment_ids 引用列使用）。
 // 单张失败跳过（那张图之后不存在，Agent 无感知降级）；QQ 重推由
 // UNIQUE(key, qq_msg_id, seq) 吸收（重复行 changes=0，不重复写盘）。
+// 注意：本函数【不做 prune】——prune 必须等 chat_user 行（引用关系）写入
+// 之后才能跑，否则刚插的图片行尚无任何引用，会被当场误删
+//（2026-10-28 真机事故：图片入库日志存在但表为空、引用全部悬空）。
+// prune 由 recordInbound 在 chat 行落库后显式调用（见 transcript.ts）。
 export async function persistEventImages(event: BotEvent): Promise<number[]> {
   const images = event.attachments.filter(isImageAttachment);
   if (images.length === 0) return [];
@@ -158,7 +166,6 @@ export async function persistEventImages(event: BotEvent): Promise<number[]> {
     insertedIds.push(Number(result.lastInsertRowid));
   }
 
-  pruneImagesOutsideWindow(key);
   return insertedIds;
 }
 

@@ -13,8 +13,8 @@
 
 import type { BotEvent } from "../events/registry.js";
 import { tenantKey } from "../session/key.js";
-import { appendEvent, chatRows, distinctChatKeys } from "../agent/memory/events.js";
-import { persistEventImages } from "../agent/memory/images.js";
+import { appendEvent, chatRows } from "../agent/memory/events.js";
+import { persistEventImages, pruneImagesOutsideWindow } from "../agent/memory/images.js";
 import { isImageAttachment } from "../events/attachments.js";
 import { logger } from "./logger.js";
 
@@ -52,6 +52,8 @@ export async function recordInbound(event: BotEvent): Promise<void> {
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : null,
       qqMsgId: event.msgId,
     });
+    // prune 挂在 chat 行落库之后（引用已建立，新图不会被误判 stale）。
+    if (attachmentIds.length > 0) pruneImagesOutsideWindow(key);
   } catch (err) {
     // 入站转录失败不阻塞业务分发（档案缺一行 < 机器人失联），但必须可见。
     logger.warn("memory", `入站转录失败（key=${key.slice(0, 10)}…）：${err instanceof Error ? err.message : err}`);
@@ -59,11 +61,6 @@ export async function recordInbound(event: BotEvent): Promise<void> {
 }
 
 // ---------- 出站收口 ----------
-
-export interface OutboundTarget {
-  // 群 or 单聊的目标 id（与 event 对应：groupOpenid / authorOpenid）
-  key: string;
-}
 
 export interface RecordOutboundOptions {
   // false = 不转录（progress-bus 等瞬时进度）。默认转录。
@@ -83,27 +80,5 @@ export function recordOutbound(
     appendEvent({ key, kind: "chat_bot", role: "assistant", content, origin });
   } catch (err) {
     logger.warn("memory", `出站转录失败（key=${key.slice(0, 10)}…）：${err instanceof Error ? err.message : err}`);
-  }
-}
-
-// ---------- 启动断痕 ----------
-
-// 进程启动时对每个已知租户写一行"记录中断"标记（failover/重启的 L2 断痕显式化，
-// recall 翻到此处知道"不是没人说话，是记录断了"）。origin=restart-gap。
-// kind=process：断痕要留在 L2 档案，但绝不能进 L1 投影——2026-10-28 真机
-// 事故：定为 chat_bot 时装配层把它当 bot 历史回复透出成裸 assistant，
-// 模型在群里回应【记录中断：进程重启】。
-export function writeRestartMarkers(): void {
-  const keys = distinctChatKeys();
-  const text = "【记录中断：进程重启】";
-  for (const key of keys) {
-    try {
-      appendEvent({ key, kind: "process", role: "assistant", content: text, origin: "restart-gap" });
-    } catch (err) {
-      logger.warn("memory", `restart-gap 写入失败（key=${key.slice(0, 10)}…）：${err instanceof Error ? err.message : err}`);
-    }
-  }
-  if (keys.length > 0) {
-    logger.info("memory", `restart-gap：为 ${keys.length} 个租户写入记录中断标记`);
   }
 }
