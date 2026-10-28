@@ -31,7 +31,6 @@ export const workspaceTaskTool: Tool = {
     required: ["task"],
   },
   progressNote: "正在委派工作台任务…",
-  skipMemory: true, // 规格书与报告都是"过程产物"，报告由主 Agent 转述后落库——原文不进热窗口
 
   async run(args, ctx: MessageContext): Promise<string> {
     const task = asString(args, "task");

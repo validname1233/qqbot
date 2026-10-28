@@ -28,9 +28,11 @@ const listeners = new Map<string, Listener>();
 function makeListener(event: BotEvent): Listener {
   return async (text) => {
     if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
-      await pushGroupMessage(event.groupOpenid, text);
+      // record:false —— 进度提示是瞬时 UI 反馈，不是对话内容，不进任何层
+      //（总方案模块一 §1.2 出站细则的 ephemeral 排除）。
+      await pushGroupMessage(event.groupOpenid, text, { record: false });
     } else {
-      await pushC2CMessage(event.authorOpenid, text);
+      await pushC2CMessage(event.authorOpenid, text, { record: false });
     }
   };
 }

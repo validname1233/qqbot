@@ -6,17 +6,33 @@
 
 import { apiRequest } from "./api.js";
 import { logger } from "../services/logger.js";
+import { recordOutbound } from "../services/transcript.js";
 
 // 出站轨迹（阶段二全局日志）：每条消息实际发出后一行留痕（收/发是日志视图的
 // 两个端点，此前发送成功是静默的）。只记规模与方向，不记正文（正文在上游的
 // detail 流水里已有）。发送失败直接抛（apiRequest 的既有行为），由调用方兜。
-function traceOut(kind: string, target: string, content: string, extra = ""): void {
-  logger.node("qq", `发送 ${kind} → ${target}（${content.length} 字${extra}）`);
+// traceOut 同时是出站转录收口（总方案模块一）：发送成功才记一行 chat_bot，
+// origin 标记来源。没发出的消息不存在（markdown 回退链只记成功那次）。
+function traceOut(
+  kind: string,
+  key: string,
+  content: string,
+  origin: string,
+  extra = "",
+  record = true,
+): void {
+  logger.node("qq", `发送 ${kind} → ${key}（${content.length} 字${extra}）`);
+  recordOutbound(key, content, origin, { record });
 }
 
 // 消息类型。0 = 纯文本；2 = Markdown。以后发图片是别的值。
 const MSG_TYPE_TEXT = 0;
 const MSG_TYPE_MARKDOWN = 2;
+
+// 主动推送的可选项：record=false 不转录（progress-bus 的瞬时进度不是对话内容）。
+export interface PushOptions {
+  record?: boolean;
+}
 
 // 发送单聊消息（被动回复）。
 // openid：收消息人的 user_openid（来自事件的 authorOpenid）。
@@ -39,7 +55,7 @@ export async function replyC2CMessage(
       msg_seq: msgSeq,
     }),
   });
-  traceOut("单聊回复", openid, content, ` seq=${msgSeq}`);
+  traceOut("单聊回复", `c2c:${openid}`, content, "reply", ` seq=${msgSeq}`);
 }
 
 // 主动发送单聊消息（主动推送，非回复）。
@@ -52,6 +68,7 @@ export async function replyC2CMessage(
 export async function pushC2CMessage(
   openid: string,
   content: string,
+  opts: PushOptions = {},
 ): Promise<void> {
   await apiRequest(`/v2/users/${openid}/messages`, {
     method: "POST",
@@ -60,7 +77,7 @@ export async function pushC2CMessage(
       msg_type: MSG_TYPE_TEXT,
     }),
   });
-  traceOut("单聊推送", openid, content);
+  traceOut("单聊推送", `c2c:${openid}`, content, "push", "", opts.record !== false);
 }
 
 // 主动发送群消息（主动推送，非回复）。
@@ -72,6 +89,7 @@ export async function pushC2CMessage(
 export async function pushGroupMessage(
   groupOpenid: string,
   content: string,
+  opts: PushOptions = {},
 ): Promise<void> {
   await apiRequest(`/v2/groups/${groupOpenid}/messages`, {
     method: "POST",
@@ -80,7 +98,7 @@ export async function pushGroupMessage(
       msg_type: MSG_TYPE_TEXT,
     }),
   });
-  traceOut("群推送", groupOpenid, content);
+  traceOut("群推送", `group:${groupOpenid}`, content, "push", "", opts.record !== false);
 }
 
 // 主动发送群 Markdown 消息。
@@ -93,14 +111,14 @@ export async function pushGroupMarkdown(
   await apiRequest(`/v2/groups/${groupOpenid}/messages`, {
     method: "POST",
     body: JSON.stringify({
-      content: "", // Markdown 消息要求 content 必须为空
+      content: "",
       msg_type: MSG_TYPE_MARKDOWN,
       markdown: {
         content: markdownContent,
       },
     }),
   });
-  traceOut("群推送Markdown", groupOpenid, markdownContent);
+  traceOut("群推送Markdown", `group:${groupOpenid}`, markdownContent, "push");
 }
 
 // 发送群 Markdown 消息（被动回复）。
@@ -124,7 +142,7 @@ export async function replyGroupMarkdown(
       msg_seq: msgSeq,
     }),
   });
-  traceOut("群回复Markdown", groupOpenid, markdownContent, ` seq=${msgSeq}`);
+  traceOut("群回复Markdown", `group:${groupOpenid}`, markdownContent, "reply", ` seq=${msgSeq}`);
 }
 
 // 发送带按钮（keyboard）的群 Markdown 消息（被动回复）。
@@ -153,7 +171,7 @@ export async function replyGroupMarkdownWithKeyboard(
       msg_seq: msgSeq,
     }),
   });
-  traceOut("群回复Markdown+按钮", groupOpenid, markdownContent, ` seq=${msgSeq}`);
+  traceOut("群回复Markdown+按钮", `group:${groupOpenid}`, markdownContent, "kb", ` seq=${msgSeq}`);
 }
 
 // 发送单聊 Markdown 消息（被动回复）。结构与 replyGroupMarkdown 一致，路径不同。
@@ -176,7 +194,7 @@ export async function replyC2CMarkdown(
       msg_seq: msgSeq,
     }),
   });
-  traceOut("单聊回复Markdown", openid, markdownContent, ` seq=${msgSeq}`);
+  traceOut("单聊回复Markdown", `c2c:${openid}`, markdownContent, "reply", ` seq=${msgSeq}`);
 }
 
 // 发送带按钮（keyboard）的单聊 Markdown 消息（被动回复）。
@@ -204,7 +222,7 @@ export async function replyC2CMarkdownWithKeyboard(
       msg_seq: msgSeq,
     }),
   });
-  traceOut("单聊回复Markdown+按钮", openid, markdownContent, ` seq=${msgSeq}`);
+  traceOut("单聊回复Markdown+按钮", `c2c:${openid}`, markdownContent, "kb", ` seq=${msgSeq}`);
 }
 
 // 发送群消息（被动回复）。
@@ -225,5 +243,5 @@ export async function replyGroupMessage(
       msg_seq: msgSeq,
     }),
   });
-  traceOut("群回复", groupOpenid, content, ` seq=${msgSeq}`);
+  traceOut("群回复", `group:${groupOpenid}`, content, "reply", ` seq=${msgSeq}`);
 }

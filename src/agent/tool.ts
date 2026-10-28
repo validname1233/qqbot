@@ -9,14 +9,9 @@ export interface Tool {
   name: string; // 工具名，模型靠它发起调用，同时是 registry 里的键
   description: string; // 给模型看的自然语言描述，决定模型「什么时候该调它」
   parameters: Record<string, unknown>; // JSON Schema，随请求一起发给模型，约束参数形状
-  // 可选声明：true = 该工具的 tool 结果消息不落短期记忆（loop.ts 落库时按
-  // tool_call_id 反查工具名后查这里的名单，见 registry.ts 的 memoryExemptToolNames）。
-  // 适用场景：工具返回的是"已有记忆的复印件"或超大正文，入库会挤爆热窗口、
-  // 污染后续检索。默认缺省 = 照常入库（所有既有工具行为不变）。
-  skipMemory?: boolean;
   // 可选声明：执行前推送给用户的进度文案（progress-bus.ts，经 registry.ts 的
   // runTool 切面 emit）。字符串为静态文案；函数接收本次调用参数、返回动态文案
-  // （如 open_page 带 URL）。缺省 = 不推送（工具对进度推送零感知，行为不变）。
+  //（如 open_page 带 URL）。缺省 = 不推送（工具对进度推送零感知，行为不变）。
   progressNote?: string | ((args: Record<string, unknown>) => string);
   run(args: Record<string, unknown>, ctx: MessageContext): Promise<string>;
 }

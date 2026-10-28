@@ -8,6 +8,7 @@ import type { BotEvent } from "./registry.js";
 import { handleC2CMessage } from "../handlers/C2C_MESSAGE_CREATE.js";
 import { handleGroupAtMessage } from "../handlers/GROUP_AT_MESSAGE_CREATE.js";
 import { handleGroupMessage } from "../handlers/GROUP_MESSAGE_CREATE.js";
+import { recordInbound } from "../services/transcript.js";
 
 // 遍历 BotEvent 的每个成员，用它的 type 当键，
 // 要求对应 handler 的入参正好是「那一种」事件。
@@ -25,6 +26,13 @@ const handlers: HandlerMap = {
 // 分发一个事件。event 为 null（未识别事件）时安静忽略。
 export async function dispatch(event: BotEvent | null): Promise<void> {
   if (event === null) return;
+
+  // 入站转录收口（总方案模块一 §1.2）：所有消息（命令/非命令/状态机）在路由
+  // 分叉之前先落一行 chat_user——"每类事件恰好一个写入者"的入站那一半。
+  // 串行 await 是有意的：保证 chat_user 行 id 恒小于本轮 process/chat_bot 行
+  // （时间线正确）；带图消息的代价是一次图片下载（≤10s 超时，常态 1~2s）。
+  // 重推由 UNIQUE(key, qq_msg_id) 吸收（appendEvent 静默跳过）。
+  await recordInbound(event);
 
   // event.type 和 handlers[event.type] 的入参是关联的，但 TS 无法自动证明
   // 这种「关联联合」的对应关系，故做一次局部断言。运行时是安全的：

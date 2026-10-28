@@ -14,6 +14,7 @@ import { initializePersonalities } from "./services/prompts/store.js";
 import { pruneOldLogs } from "./services/logger.js";
 import { initializeMcpTools } from "./agent/mcp/initialize.js";
 import { initializeWorkspace } from "./services/workspace/run-task.js";
+import { writeRestartMarkers } from "./services/transcript.js";
 import { logger } from "./services/logger.js";
 
 // 本地监听端口。只绑 127.0.0.1，不对公网暴露——外面只能经 nginx 进来。
@@ -162,6 +163,10 @@ await initializeMcpTools();
 // 全局并发 1 保证启动时不存在合法在跑的任务——前缀匹配到的必是遗留，清掉。
 // 失败不阻塞启动（run-task 内部已兜）。
 await initializeWorkspace();
+
+// 对话转录断痕（总方案模块一 §1.2）：对每个已知租户写一行"记录中断"标记，
+// L2 档案的缺口显式可见（recall 翻到此处知道不是没人说话，是记录断了）。
+writeRestartMarkers();
 
 server.listen(PORT, HOST, () => {
   logger.info("webhook", `监听 http://${HOST}:${PORT}（经 nginx 反代对外提供 HTTPS）`);

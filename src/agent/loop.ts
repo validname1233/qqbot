@@ -1,222 +1,90 @@
-// agent/loop.ts —— agent 的核心流程：用 LangGraph 的 StateGraph 搭一个五节点小图，
-//   顶替之前手写的 for 循环，语义完全对齐：
-//     prepareContext —— 装配这一轮需要的上下文：取短期记忆历史、格式化当前这句话
-//                        （单聊/群聊差异只在这一步体现）、拉长期记忆文本，写进 state。
-//     llmCall       —— 带 tools 调模型，无论结果如何都原样返回，交给条件边路由。
-//     plainReply    —— 第一步就没调工具（纯闲聊直接回答，messages 里没有任何 tool
-//                        消息）时走到这里：换成汐汐人设、不带 tools 再调一次，得到
-//                        最终回复后直接结束（走 END）。调过工具后主动停止的路径
-//                        一律走 finalize（见 afterLlmCall 的历史性判据）。
-//     tools         —— llmCall 判断出"需要工具"时走到这里：本地并发执行 tool_calls，
-//                        结果拼回 messages，turnCount+1。turnCount 还没到上限就绕回
-//                        llmCall 再来一轮，到了上限就转去 finalize。
-//     finalize      —— 调过工具后的统一收尾：单独拼一段「人设+需求+工具结果」的提示词，
-//                        不带聊天历史、不带 tools，逼模型只根据这些信息收尾。两种进入
-//                        路径：调完工具主动停（模型认为材料够了）/ 轮次或预算耗尽。
-//   以后想让模型连续调多轮工具，还是只改 MAX_TOOL_TURNS 这个数字，不用动图结构。
+// agent/loop.ts —— agent 的核心流程：LangGraph StateGraph 五节点小图
+//（2026-10-28 记忆与上下文重构后的形态，总方案 docs/features/
+// 2026-10-28-记忆与上下文重构总方案.md 模块二）：
+//   prepareContext —— 装配 L1 投影（assembly.projectWindow：最新 reset 之后的
+//                        chat 行 → 形态 B 增量 blob），拼 [system, ...投影, u_now]。
+//   llmCall       —— 带 tools 调模型（judge：意图推断 + 工具决策）。每拿到一次
+//                        输出就地写一行 process（库存真相，v2 就地入库决议）。
+//   plainReply    —— judge 判定无需工具：换人设重答。输入含 judge 的固定话术
+//                        碎念（v6：选项二保留；连续 assistant 协议安全已实证）。
+//   tools         —— 并发执行 tool_calls，结果拼回 messages；每条结果就地写
+//                        process 行（原文全文，零策略）。
+//   finalize      —— 调过工具后的收尾：system 含收尾指令（INSTR 已取消并入
+//                        agent_finalize），user 侧 = 投影 + u_now + 本轮裸序列。
+//   轮次上限 MAX_TOOL_TURNS 不变；改它不用动图结构。
 //
-// 记忆：短期记忆（最近若干条消息）+ 长期记忆占位，单聊/群聊的差异全部收在
-// agent/context.ts 里（formatSpeakerContent / buildLongTermContextText），
-// 本文件的节点只管调用，不用各自判断 event.type。
+// 入库职责（v2/v7 决议）：本文件只写 process 行（llmCall/toolsNode 就地）；
+// chat_user 由 dispatcher 入站收口、chat_bot 由出站收口（messages.ts）——
+// runAgentTurn 尾部的批量落库段已删除。
 
 import { StateGraph, StateSchema, ReducedValue, START, END } from "@langchain/langgraph";
 import { z } from "zod";
 import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
-import type { BotEvent } from "../events/registry.js";
-import { formatSpeakerContent, buildLongTermContextText } from "./context.js";
-import { expandImagePlaceholders } from "./memory/images.js";
+import { projectWindow, buildCurrentUserMessage } from "./assembly.js";
 import { callModel } from "../services/model.js";
 import { logger } from "../services/logger.js";
 import { getSystemPrompt } from "../services/prompts/builder.js";
-import { runTool, toolSchemas, memoryExemptToolNames } from "./registry.js";
-import { sqliteMemoryStore } from "./memory/sqlite.js";
+import { runTool, toolSchemas } from "./registry.js";
+import { appendEvent } from "./memory/events.js";
 import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
 import { tenantKey } from "../session/key.js";
 import { subscribeProgress } from "../services/progress-bus.js";
 import type { ChatMessage } from "./types.js";
 
-// llmCall 用的系统提示词：只负责"要不要调工具、调哪个"的判断，不承担人设/表达任务。
-// 这里特意不放人设：人设风格（语气词、卖萝莉属性）只会干扰模型对 tool_calls 的稳定输出，
-// 而且这次调用的文字输出不会展示给用户（plainReply/finalize 会换人设重新生成）。
-// 规则文本在 FUNCTIONAL_PROMPTS.agent_judge；agent_judge 在 builder.ts 登记为
-// "纯功能场景"，getSystemPrompt 对它只返回功能规则、不拼人格。
+// llmCall 用的系统提示词：只负责"读历史 → 推断意图 → 判断要不要调工具"，
+// 不承担人设/表达任务（纯功能场景，builder 不拼人格）。它的文字输出在无工具
+// 路径被塑形为固定话术（见 agent_judge 提示词），不会展示给用户。
 
 // 工具调用最多几轮。2 表示：允许一次串行依赖——第一轮工具（如 get_time）的
-// 返回值可以被第二轮工具（如 search）当参数用；不需要串行的请求模型第一轮
-// 就收尾，不会白付第二轮的调用成本。
+// 返回值可以被第二轮工具（如 search）当参数用。
 const MAX_TOOL_TURNS = 2;
 
-// messages 用累加式的 ReducedValue：每个节点只管返回"这一步新增的消息"，
-// 图会自动 concat 到已有 messages 后面——不用像原来手写循环那样自己 push。
-// ctx 用 z.custom 只当类型标记，不做运行时校验（本来就是进程内对象，不需要校验）。
-// longTermContext：长期记忆注入文本，prepareContext 节点写入，plainReply/finalize 读取。
-// imageIds：/Agent 消息自带图片的 message_images id 列表（agentService.handle 下载后
-// 传入），prepareContext 用来在当前 userMessage 里拼 [图片:<id>] 占位符。历史消息的
-// 占位符在落库时就已带上（memory-log observer / runAgentTurn 的 append）。
+// messages 用累加式的 ReducedValue：每个节点只管返回"这一步新增的消息"。
+// ctx 用 z.custom 只当类型标记，不做运行时校验（进程内对象）。
+// projection：prepareContext 写入的 L1 投影（plainReply/finalize 复用）。
+// interruptSignal：/stop 的中断信号，llmCall 的模型调用带它。
 const AgentState = new StateSchema({
   messages: new ReducedValue(z.custom<ChatMessage[]>(), {
     reducer: (current: ChatMessage[], next: ChatMessage[]) => [...current, ...next],
   }),
   ctx: z.custom<MessageContext>(),
   userText: z.string(),
-  history: z.custom<ChatMessage[]>(),
+  projection: z.custom<ChatMessage[]>(),
   turnCount: z.number().default(0),
   reply: z.string().nullable().default(null),
-  longTermContext: z.string().default(""),
-  imageIds: z.custom<number[]>().default([]),
-  // /stop 的中断信号：runAgentTurn 挂进 state，llmCall 的模型调用带它
-  // （拉闸时正在等的 fetch 立刻抛 AbortError，当前轮当场结束）。
+  // /stop 中断信号：拉闸时正在等的 fetch 立刻抛 AbortError，当前轮当场结束。
   interruptSignal: z.custom<AbortSignal>().nullable().default(null),
 });
 
 type AgentStateT = typeof AgentState.State;
 type AgentUpdateT = typeof AgentState.Update;
 
-// 节点零：图的新起点。把"这一轮需要哪些上下文"集中在这一步准备好——
-// 取短期记忆历史（由 runAgentTurn 传入 state.history）、把当前这句话格式化
-// （群聊拼昵称前缀，单聊原样）、拉长期记忆文本，最后把 history 和当前消息里的
-// [图片:<id>] 占位符展开成 [图片]{描述}（懒加载识图：描述此刻才生成，见
-// memory/images.ts）。后面的节点只管读 state，不用各自判断"是不是群聊"。
+// 节点零：装配。projectWindow 从库投影（无状态，每次现算）；u_now 由 ctx 构造
+// 恒在末尾。图片展开（懒识图）是这步的主要耗时来源（秒级）。
 async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
-  const event = state.ctx.event;
-  // 各步累计计时（轨迹日志）：基准点取函数入口，每步打"累计耗时"——累计值
-  // 一行代码就能算，且各步加起来是否等于总耗时一眼可验。识图/长期记忆召回
-  // 是这步的主要耗时来源（秒级），轨迹可见有排查价值。
   const t0 = Date.now();
-  const step = (name: string, since: number): void => {
-    logger.node("agent", `prepareContext ${name} 完成（累计 +${Date.now() - since}ms）`);
+  const step = (name: string): void => {
+    logger.node("agent", `prepareContext ${name} 完成（累计 +${Date.now() - t0}ms）`);
   };
 
-  // 当前消息：占位符拼在文字前（与 memory-log 的口径一致），再套群聊昵称前缀。
-  const rawUserText = buildTextWithPlaceholders(state.userText, state.imageIds);
-  const formattedUserText = formatSpeakerContent(rawUserText, event.authorName, event);
-  step("占位符拼接与说话人格式化", t0);
+  const { messages: projected } = await projectWindow(state.ctx);
+  step("L1 投影");
 
-  // 展开懒加载占位符：history 的 user 消息 + 当前 userMessage（/Agent 带图当轮就要看）。
-  // 只展开 user 消息——assistant 回复万一复读了 "[图片:17]" 字样，不能被误替换。
-  // 展开后的 history 覆盖写回 state：finalize 节点读 state.history，必须拿到展开版。
-  // key 是图片查询的租户边界（IDOR 修复）：服务端从 event 推导，history 与当前消息
-  // 同属一个会话，算一次贯穿两处。
-  const imgKey = tenantKey(event);
-  const expandedHistory = dropOrphanToolHead(await expandHistoryImages(state.history, imgKey));
-  step("history 图片占位符展开", t0);
-  const expandedUserText = await expandImagePlaceholders(formattedUserText, imgKey);
-  step("当前消息图片占位符展开", t0);
+  const uNow = await buildCurrentUserMessage(state.ctx, state.userText);
+  step("u_now 构造（含当轮图片展开）");
 
-  const longTermContext = await buildLongTermContextText(event, state.userText);
-  step("长期记忆召回", t0);
-
-  const userMessage: ChatMessage = { role: "user", content: expandedUserText };
   const initialMessages: ChatMessage[] = [
-    { role: "system", content: getSystemPrompt(event, "agent_judge") },
-    ...expandedHistory,
-    userMessage,
+    { role: "system", content: getSystemPrompt(state.ctx.event, "agent_judge") },
+    ...projected,
+    uNow,
   ];
 
-  return { messages: initialMessages, history: expandedHistory, longTermContext };
+  return { messages: initialMessages, projection: projected };
 }
 
-// 孤儿 tool 头部修复（2026-09-24 单聊 400 事故的修复，docs/problems 同日复盘）：
-// 热窗口按"最新 20 条"切割，而配对里 tool 消息永远比它的父 assistant(tool_calls)
-// 新——切割落进配对时，被切出窗口的永远是父，窗口头部就可能留下没有爹的孤儿
-// tool。DeepSeek 校验"tool 消息必须紧跟带 tool_calls 的 assistant"，孤儿一进
-// messages 就 400。修复 = 丢弃头部连续的孤儿（内存副本，库里原样保留——窗口
-// 滚动后边界移开，下次读出的可能又是完整配对）。
-// 只处理这一种形态：20 条窗口的切割只能制造它（悬空 assistant 需要子被挖走
-// 而父留下，反向切割，现有读写路径做不出来——为不存在的形态写分支是永远
-// 测不到的代码，真出现时其报错文案也不同，到故障源修更准）。
-function dropOrphanToolHead(history: ChatMessage[]): ChatMessage[] {
-  let i = 0;
-  while (i < history.length && history[i].role === "tool") {
-    i++;
-  }
-  if (i === 0) return history;
-  logger.warn("agent", `热窗口头部有 ${i} 条孤儿 tool 消息（父已滑出窗口），本轮已剔除`);
-  return history.slice(i);
-}
-
-// 当前消息的占位符拼接：图片在前、文字在后。逻辑与 memory-log 的
-// buildContentWithPlaceholders 同款，这里不 import 是因为那边还要处理观察者
-// 特有的空文本分支——两处各留一份三行小函数，好过为一行逻辑建公共依赖。
-function buildTextWithPlaceholders(text: string, imageIds: number[]): string {
-  const parts: string[] = imageIds.map((id) => `[图片:${id}]`);
-  if (text !== "") parts.push(text);
-  return parts.join(" ");
-}
-
-// history 里 user 消息的图片占位符批量展开（并发识图在 expandImagePlaceholders
-// 内部做，这里只是逐条调用）。assistant/tool 消息原样保留。key 是图片查询的
-// 租户边界，history 整体同属一个会话，调用方算好传入。
-async function expandHistoryImages(history: ChatMessage[], key: string): Promise<ChatMessage[]> {
-  return Promise.all(
-    history.map(async (msg) => {
-      if (msg.role !== "user" || msg.content === null) return msg;
-      const expanded = await expandImagePlaceholders(msg.content, key);
-      return expanded === msg.content ? msg : { ...msg, content: expanded };
-    }),
-  );
-}
-
-// 轮次用完但 reply 还是空时的收尾：单独拼一段提示词——人设 + 长期记忆 + 用户原始需求 +
-// 工具结果——不带聊天历史、不带 tools，逼模型只根据这些信息给出一段干净的最终回复。
-// 单开一个函数是因为这段提示词本身有点长，混在节点函数里会显得臃肿。
-//
-// 系统提示词和动态内容必须分开成两条消息：之前把 FINAL_REPLY_SYSTEM_PROMPT 和历史/需求/
-// 工具结果整段拼成一条 role:"user" 消息发出去，等于把"人设+格式限制"这些本该受更高优先级
-// 保护的系统指令，降级成了模型眼里"用户说的话"——指令层级一降，模型更容易被问出/复述这段
-// 系统提示词。改成 role:"system" 单独一条，配合下面 role:"user" 只放会变化的上下文数据。
-async function synthesizeFinalReply(
-  userText: string,
-  history: ChatMessage[],
-  toolResults: ChatMessage[],
-  longTermContext: string,
-  event: BotEvent,
-): Promise<string> {
-  const historyText =
-    history.length === 0
-      ? "（无历史对话）"
-      : history
-          .map((msg) => `${msg.role}：${msg.content ?? "(无内容)"}`)
-          .join("\n");
-
-  const toolResultsText = toolResults
-    .map((msg, i) => `工具结果 ${i + 1}：${msg.content ?? "(无内容)"}`)
-    .join("\n\n");
-
-  const userContentParts: string[] = [];
-
-  if (longTermContext) {
-    userContentParts.push(longTermContext);
-    userContentParts.push("");
-  }
-
-  userContentParts.push(`以下是最近的对话记录（供参考上下文）：
-${historyText}
-
-用户现在想要实现的需求是：${userText}
-
-以下是为完成这个需求而调用工具得到的结果：
-${toolResultsText}
-
-请你根据以上对话记录和工具结果，直接给用户一段完整、自然的最终回复，不要再调用任何工具。`);
-
-  const final = await callModel(
-    [
-      { role: "system", content: getSystemPrompt(event, "agent_finalize") },
-      { role: "user", content: userContentParts.join("\n") },
-    ],
-    undefined,
-    config.agentModel,
-    true,
-    "finalizeNode",
-  );
-  return final.content ?? "（Agent 没有返回内容）";
-}
-
-// 节点一：带 tools 调模型。只负责判断"需不需要工具"，无论结果如何都把 response 原样返回，
-// 交给条件边路由：有 tool_calls → tools 节点；没有 tool_calls → plainReply 节点。
-// fetch 带 interruptSignal：/stop 拉闸时正在等的模型调用立刻抛 AbortError 中断。
+// 节点一：带 tools 调模型（judge）。输出就地写一行 process（库存真相）——
+// 含 tool_calls 的 Thought 与无工具路径的固定话术碎念都落。
 async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
   const response = await callModel(
     state.messages,
@@ -227,6 +95,16 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
     state.interruptSignal ?? undefined,
   );
 
+  // 就地入库（v2）：process 行，原文全文（tool_calls 含 id 的 JSON）。
+  appendEvent({
+    key: tenantKey(state.ctx.event),
+    kind: "process",
+    role: "assistant",
+    content: response.content,
+    toolCalls: response.tool_calls,
+    origin: "agent",
+  });
+
   return {
     messages: [
       { role: "assistant", content: response.content, tool_calls: response.tool_calls },
@@ -234,37 +112,30 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
   };
 }
 
-// 节点一.五：llmCall 判断出"不需要工具"时走到这里。刚才那次调用用的是 agent_judge
-// （纯工具判断人设，不适合直接展示给用户），所以再跑一次不带 tools 的调用，
-// 换成日常对话人设，让模型正常回答用户的问题。
+// 节点一.五：judge 判定"不需要工具"时走到这里。输入数组 = 投影 + u_now +
+// judge 的固定话术碎念（v6 决议：选项二保留——连续 assistant 协议安全已实证，
+// 碎念被塑形为完整自洽的一句话，续写风险极低）。换成日常人设重新生成。
 async function plainReply(state: AgentStateT): Promise<AgentUpdateT> {
-  // state.messages 结构：[0] agent_judge system, [1..n-1] history(含展开后的图片描述), [n] 当前用户消息, [n+1] 刚才 llmCall 返回的 assistant 消息
-  // 要构造的新 messages：[0] 日常对话人设的 system, [1] 长期记忆（如果有）+ history + 当前用户消息
-  // 图片描述已经内联在 history / 当前消息的 content 里（prepareContext 展开过），
-  // 这里不需要任何图片相关的特判——占位符"长在消息里"的方案红利。
-  // slice(1,-1) 在新路由下恒切到 user 为止（本节点只会在"从未调过工具"时进入，
-  // 最后一条 assistant 是 agent_judge 的判断碎念，必须去掉）——若未来路由放宽，
-  // 这里防御性地不会把 tool 消息后的成品答案误当碎念切掉。
-  const historyAndUser = state.messages.slice(1, -1);
-
-  const messages: ChatMessage[] = [{ role: "system", content: getSystemPrompt(state.ctx.event, "daily") }];
-
-  if (state.longTermContext) {
-    messages.push({ role: "user", content: state.longTermContext });
-  }
-
-  messages.push(...historyAndUser);
+  // state.messages：[0] agent_judge system, [1..n-1] 投影+u_now, [n] 碎念。
+  // 新 messages：日常 system + 投影 + u_now + 碎念（保留 v6；daily 的 system
+  // 声明"判断话术是路由中间产物，无视其表达、回答用户最后的问题"）。
+  const messages: ChatMessage[] = [
+    { role: "system", content: getSystemPrompt(state.ctx.event, "daily") },
+    ...state.projection,
+    ...state.messages.slice(-2), // u_now + 碎念（最后两条）
+  ];
 
   const plain = await callModel(messages, undefined, undefined, undefined, "plainReply");
   const reply = plain.content ?? "（Agent 没有返回内容）";
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
-// 节点二：本地并发执行上一步模型给的 tool_calls。结果拼回 messages，turnCount+1。
-// 单个工具失败不影响其它工具——runTool 内部已把异常兜成固定短语"工具执行失败"。
+// 节点二：本地并发执行 tool_calls。结果拼回 messages + 就地写 process 行
+//（原文全文，零策略——体积控制由 reset 承担，装配侧零过滤）。
 async function toolsNode(state: AgentStateT): Promise<AgentUpdateT> {
   const lastMessage = state.messages[state.messages.length - 1];
   const toolCalls = lastMessage?.tool_calls ?? [];
+  const key = tenantKey(state.ctx.event);
 
   const toolMessages = await Promise.all(
     toolCalls.map(async (call): Promise<ChatMessage> => {
@@ -275,6 +146,15 @@ async function toolsNode(state: AgentStateT): Promise<AgentUpdateT> {
         args = {};
       }
       const result = await runTool(call.function.name, args, state.ctx);
+      // 就地入库（v2）：tool 结果 process 行，保 tool_call_id（配对真相）。
+      appendEvent({
+        key,
+        kind: "process",
+        role: "tool",
+        content: result,
+        toolCallId: call.id,
+        origin: "agent",
+      });
       return { role: "tool", content: result, tool_call_id: call.id };
     }),
   );
@@ -282,33 +162,28 @@ async function toolsNode(state: AgentStateT): Promise<AgentUpdateT> {
   return { messages: toolMessages, turnCount: state.turnCount + 1 };
 }
 
-// 节点三：轮次用完但 reply 还是空时的收尾。只在这一种情况下会被走到。
+// 节点三：调过工具后的统一收尾。user 侧 = 投影 + u_now + 本轮裸序列
+//（assistant(tool_calls)/tool 对，协议配对原样）；system 含收尾指令
+//（agent_finalize，INSTR 已取消并入）。不再把历史重引用成平文本。
 async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
-  // 轨迹行：进入 finalize（调过工具后的统一收尾——主动停或预算耗尽两条路都到这）。
   logger.node("agent", `finalize 收尾（基于 ${state.messages.filter((m) => m.role === "tool").length} 条工具结果）`);
-  // messages[0] 是 system prompt，之后是历史 + 这一轮新增的——挑出 role:"tool" 的
-  // 部分喂给 synthesizeFinalReply，和原来 allToolMessages 的口径一致。
-  const toolResults = state.messages.filter((msg) => msg.role === "tool");
-  const reply = await synthesizeFinalReply(
-    state.userText,
-    state.history,
-    toolResults,
-    state.longTermContext,
-    state.ctx.event,
-  );
+  // 本轮新增 = 投影之后的消息（u_now 起到末尾，含全部工具序列）。
+  const afterProjection = state.messages.slice(state.projection.length + 1);
+
+  const messages: ChatMessage[] = [
+    { role: "system", content: getSystemPrompt(state.ctx.event, "agent_finalize") },
+    ...state.projection,
+    ...afterProjection,
+  ];
+
+  const final = await callModel(messages, undefined, config.agentModel, true, "finalizeNode");
+  const reply = final.content ?? "（Agent 没有返回内容）";
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
-// 路由一：llmCall 之后。plainReply 的唯一合法入口 = 第一步就没调过工具
-// （纯闲聊直接回答）——判据是"messages 里没有任何 tool 消息"（历史性判据），
-// 而不是"本轮输出没有 tool_calls"（瞬时判据）。两者的区别在"调完工具后主动
-// 停止"的路径：模型看完工具结果给出纯文本答案（如 recall_memory 返回 LanceDB
-// 切片后直接回答），瞬时判据会把它误送 plainReply——那里 slice(1,-1) 切掉
-// 最后一条 assistant（恰好是成品答案），且无引导重答会被 history 带偏
-// （实机事故：正确答案被切、重答跑题）。历史性判据下它走 finalize：
-// synthesizeFinalReply 显式拼工具结果 + pro 模型收尾，答案保住。
-//   - 有 tool_calls（还要调）且预算未耗尽 → tools
-//   - 其余（调过工具后主动停 / 预算耗尽）→ finalize
+// 路由一：llmCall 之后。plainReply 唯一入口 = 从未调过工具（历史性判据）：
+// "调完工具后主动停止"的路径（看完工具结果给纯文本）必须走 finalize——
+// 那里显式拼工具结果 + pro 模型收尾，答案保住（2026-09-18 事故的教训）。
 function afterLlmCall(state: AgentStateT): "plainReply" | "tools" | "finalize" {
   const lastMessage = state.messages[state.messages.length - 1];
   const toolCalls = lastMessage?.tool_calls;
@@ -316,13 +191,11 @@ function afterLlmCall(state: AgentStateT): "plainReply" | "tools" | "finalize" {
   if (hasToolCalls && state.turnCount < MAX_TOOL_TURNS) {
     return "tools";
   }
-  // 到这里：要么没有 tool_calls，要么预算耗尽。没有 tool 消息历史 → 从未调过
-  // 工具的纯文本输出 → plainReply；否则 finalize。
   const usedTools = state.messages.some((msg) => msg.role === "tool");
   return usedTools ? "finalize" : "plainReply";
 }
 
-// 路由二：tools 之后——轮次还没到上限就回 llmCall 再问模型一次，到上限就去 finalize 收尾。
+// 路由二：tools 之后——轮次未到上限回 llmCall，到了去 finalize。
 function afterTools(state: AgentStateT): "llmCall" | "finalize" {
   return state.turnCount < MAX_TOOL_TURNS ? "llmCall" : "finalize";
 }
@@ -344,7 +217,6 @@ const agentGraph = new StateGraph(AgentState)
 export async function runAgentTurn(
   userText: string,
   ctx: MessageContext,
-  imageIds: number[] = [],
 ): Promise<string> {
   // /stop 中断挂载（拒绝并发语义）：登记失败 = 该会话已有长流程在跑，直接拒绝。
   const flowKey = tenantKey(ctx.event);
@@ -353,85 +225,29 @@ export async function runAgentTurn(
     return "上一个任务还在跑哦～先发 /stop 停掉它，再重新发起吧。";
   }
 
-  // 进度推送订阅（progress-bus，一期只挂 /Agent）：这次请求期间，声明了
-  // progressNote 的工具执行前会向该会话推送进度。订阅作用域与并发闸对齐——
-  // 正常完成、/stop 中断、异常三条路径都经 finally 退订。
+  // 进度推送订阅（progress-bus）：正常完成、/stop 中断、异常三条路径都经
+  // finally 退订。
   const unsubscribeProgress = subscribeProgress(ctx.event);
   const startedAt = Date.now();
   logger.node("agent", `[/Agent] 收到（${userText.slice(0, 40)}${userText.length > 40 ? "…" : ""}）`);
 
   try {
-    const key = tenantKey(ctx.event);
-    const history = await sqliteMemoryStore.get(key);
-
-    // messages 初始值留空：prepareContext 节点是图的新起点，负责把
-    // [AGENT_SYSTEM_PROMPT, ...history, 格式化后的 userMessage] 拼好写进 messages。
-    // interruptSignal 进 state，供 llmCall 的模型调用和条件边感知 /stop。
+    // messages 初始值留空：prepareContext 负责拼 [system, ...投影, u_now]。
+    // 入库不再在此处发生——chat_user 由 dispatcher 收口、process 由节点就地、
+    // chat_bot 由出站收口（旧批量落库段已删除，v2 决议）。
     const result = await agentGraph.invoke({
       messages: [],
       ctx,
       userText,
-      history,
-      imageIds,
       interruptSignal: controller.signal,
     });
 
-    // 被 /stop 中断的标志：reply 为空且 signal 已拉闸。正常完成 reply 一定非空
-    // （plainReply/finalize 都会产出），不需要再给用户发"任务失败"——/stop 已确认过。
     if (controller.signal.aborted) {
       return "";
     }
 
     const reply = result.reply ?? "（Agent 没有返回内容）";
     logger.node("agent", `[/Agent] 完成 → 回复 ${reply.length} 字 (+${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);
-
-    // messages 里 [0] 是 system prompt，[1..history.length] 是历史，
-    // 从 userMessage 开始往后的都是这一轮新增的——直接切片存进短期记忆。
-    // 注意存的是"占位符版"（prepareContext 展开前的原始消息）：messages 里的
-    // history 是展开版，但这一轮新增的切片（userMessage 及之后）来自初始构造，
-    // prepareContext 返回的 userMessage 已是展开版——所以这里要用占位符版重拼，
-    // 保证库里存的是引用（懒加载语义：描述不落库，下次读取再展开/复用缓存）。
-    // 传入 author 信息：从事件中提取发言人的 openid 和昵称。
-    const event = ctx.event;
-    const rawUserText = buildTextWithPlaceholders(userText, imageIds);
-    const storedUserMessage: ChatMessage = {
-      role: "user",
-      content: formatSpeakerContent(rawUserText, event.authorName, event),
-    };
-    // 声明了 skipMemory 的工具，其 tool 结果不入库（如 recall_memory 的切片是
-    // 旧对话复印件，落库会挤爆热窗口并被再次检索到）。身份判定走结构化关联：
-    // tool 消息的 tool_call_id ↔ assistant 消息 tool_calls[].id 反查出工具名，
-    // 再查注册表的豁免名单——不按内容猜（前缀匹配那类做法，工具返回格式一改
-    // 或内容碰巧相似就静默失效）。
-    // 豁免的不是"删除"而是"换成占位符"：assistant(tool_calls) 与 tool 回话消息
-    // 在 API 协议里绑定成对，删掉 tool 会让 assistant(tool_calls) 悬空——下轮
-    // 这段 history 重放时撞上 DeepSeek 的消息格式校验直接 400。占位符保住
-    // tool_call_id 的配对，正文换成一句说明，协议合法、语义也不误导。
-    const exemptTools = memoryExemptToolNames();
-    const toolCallNames = new Map<string, string>();
-    for (const msg of result.messages) {
-      if (msg.role === "assistant" && msg.tool_calls !== undefined) {
-        for (const call of msg.tool_calls) toolCallNames.set(call.id, call.function.name);
-      }
-    }
-    const newMessages = result.messages.slice(1 + history.length).map((msg) => {
-      if (msg.role !== "tool") return msg;
-      const toolName =
-        msg.tool_call_id !== undefined ? toolCallNames.get(msg.tool_call_id) : undefined;
-      if (toolName === undefined || !exemptTools.has(toolName)) return msg;
-      return {
-        role: "tool" as const,
-        content: `${toolName} 结果返回`,
-        tool_call_id: msg.tool_call_id,
-      };
-    });
-    await sqliteMemoryStore.append(
-      key,
-      { openid: event.authorOpenid, name: event.authorName },
-      storedUserMessage,
-      ...newMessages.slice(1),
-    );
-
     return reply;
   } finally {
     unsubscribeProgress();

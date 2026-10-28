@@ -16,11 +16,20 @@ export interface MessageAttachment {
   url: string; // 附件下载 URL
   filename: string; // 文件名（QQ 可能给空串）
   contentType: string; // content_type 原样（"voice"/"file"/"image/jpeg"/...）
+  fileid: string; // 附件的全局唯一身份（URL 的 fileid 参数；同消息多图元数据可全同、fileid 必异——2026-10-28 实测）
   width?: number; // 图片宽度像素，非图片附件无
   height?: number; // 图片高度像素，非图片附件无
   size?: number; // 文件大小字节
   voiceWavUrl?: string; // 语音转 WAV 的 URL，非语音附件无
   asrReferText?: string; // 语音的官方 ASR 转写结果，非语音附件无
+}
+
+// 附件 URL 的 fileid 参数提取（如 …/download?appid=1407&fileid=EhT_xxx&…）。
+// fileid 是附件的全局唯一身份（实测：同消息多图 filename/宽高/大小可完全相同，
+// fileid 必异）。URL 带不到参数时返回空串（不做排查用途之外的功能依赖）。
+function fileidOf(url: string): string {
+  const m = url.match(/[?&]fileid=([^&]+)/);
+  return m === null ? "" : m[1];
 }
 
 // 图片附件判定：content_type 是 image/* 即视为图片（QQ 文档只列了 jpeg/png/gif，
@@ -54,6 +63,7 @@ export function parseAttachments(d: unknown): MessageAttachment[] {
       url: obj.url,
       filename: typeof obj.filename === "string" ? obj.filename : "",
       contentType: obj.content_type,
+      fileid: fileidOf(obj.url),
     };
     // 数值字段：官方给的是 integer，但容错成「是 number 才收」。
     if (typeof obj.width === "number") attachment.width = obj.width;

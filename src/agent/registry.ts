@@ -29,15 +29,6 @@ export function toolSchemas(): ToolSchema[] {
   }));
 }
 
-// 声明了 skipMemory 的工具名集合：loop.ts 落库前用它过滤"不该进短期记忆"的
-// tool 消息（身份判定走 tool_call_id 反查，不猜内容）。每次调用现算——工具表
-// 是启动期注册的小 Map，几十次落库调用各建一个 Set 的成本可忽略，不值得缓存。
-export function memoryExemptToolNames(): Set<string> {
-  return new Set(
-    [...tools.values()].filter((tool) => tool.skipMemory === true).map((tool) => tool.name),
-  );
-}
-
 // 按名字执行一个工具。名字不存在或 run 抛错，都统一在这里兜成"工具执行失败"，
 // 回给模型的内容保持固定短语，简单可靠。
 // 进度推送切面（progress-bus.ts）：声明了 progressNote 的工具在执行前 emit 一条

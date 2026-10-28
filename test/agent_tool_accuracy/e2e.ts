@@ -226,26 +226,21 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 
 const { runAgentTurn } = await import("../../src/agent/loop.js");
 const { registerTool } = await import("../../src/agent/registry.js");
-await import("../../src/services/agent.js"); // 副作用：注册 8 个生产工具
-const { sqliteMemoryStore } = await import("../../src/agent/memory/sqlite.js");
+await import("../../src/services/agent.js"); // 副作用：注册生产工具
+const { appendEvent, clearEvents } = await import("../../src/agent/memory/events.js");
 const { tenantKey } = await import("../../src/session/key.js");
 const { callModel } = await import("../../src/services/model.js");
 const { setReminderTool } = await import("../../src/agent/tools/set-reminder.js");
 const { searchTool } = await import("../../src/agent/tools/search.js");
-const { addMemoryTool } = await import("../../src/agent/tools/add-memory.js");
-const { deleteMemoryTool } = await import("../../src/agent/tools/delete-memory.js");
-const { clearAllMemoriesTool } = await import("../../src/agent/tools/clear-all-memories.js");
 const { agentOpenPageTool } = await import("../../src/agent/tools/open-page.js");
 const { getTimeTool } = await import("../../src/agent/tools/get-time.js");
 const { recallMemoryTool } = await import("../../src/agent/tools/recall-memory.js");
 
 // 工具替身：名称/描述/参数 schema 全部沿用生产定义（模型看到的工具表不变），
 // 只替换 run——记录注入后的最终执行参数，返回 cases.json 配置的固定结果。
-// progressNote 一律去掉（不触发进度推送 → 无 QQ 外呼）；skipMemory 保留
-// （recall_memory 的落库豁免属于 Runtime 语义，评测照走）。
+// progressNote 一律去掉（不触发进度推送 → 无 QQ 外呼）。
 const productionTools: Tool[] = [
-  setReminderTool, searchTool, addMemoryTool, deleteMemoryTool,
-  clearAllMemoriesTool, agentOpenPageTool, getTimeTool, recallMemoryTool,
+  setReminderTool, searchTool, agentOpenPageTool, getTimeTool, recallMemoryTool,
 ];
 for (const tool of productionTools) {
   registerTool({
@@ -362,24 +357,32 @@ async function runOneCase(
   const key = tenantKey(event); // c2c:eval-… / group:group-eval-…，均带唯一 runTag
   harness.reset(c.toolResults, mockResponses);
 
-  // 历史种子：走生产写入路径（带 speaker 前缀的口径由 runAgentTurn 读取时自行处理）
-  if (c.historySeed.length > 0) {
-    await sqliteMemoryStore.append(
-      key,
-      { openid: event.authorOpenid, name: event.authorName },
-      ...c.historySeed,
-    );
+  // 历史种子：写 conversation_events 的 chat 行（新架构的投影源）。
+  // user 行带 author（装配层渲染 speaker 字段用），assistant 行按 chat_bot 落。
+  for (const seed of c.historySeed) {
+    if (seed.role === "user") {
+      appendEvent({
+        key,
+        kind: "chat_user",
+        role: "user",
+        author: { openid: event.authorOpenid, name: event.authorName },
+        content: seed.content,
+        qqMsgId: `seed-${runTag}-${Math.random().toString(36).slice(2, 8)}`,
+      });
+    } else {
+      appendEvent({ key, kind: "chat_bot", role: "assistant", content: seed.content, origin: "seed" });
+    }
   }
 
   const startedAt = Date.now();
   let reply: string | null = null;
   let infraError: string | null = null;
   try {
-    reply = await runAgentTurn(c.input, ctx, []);
+    reply = await runAgentTurn(c.input, ctx);
   } catch (error) {
     infraError = error instanceof Error ? error.message : String(error);
   } finally {
-    await sqliteMemoryStore.clear(key); // 清掉本次写入（种子 + 本轮消息）
+    clearEvents(key); // 清掉本次写入（种子 + 本轮消息）
   }
 
   return {

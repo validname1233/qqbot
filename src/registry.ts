@@ -20,7 +20,6 @@ import { stripAtBotMention } from "./events/GROUP_MESSAGE_CREATE/index.js";
 import { knowledgeBaseService } from "./services/knowledge-base.js";
 import { helpService } from "./services/help.js";
 import { stopService } from "./services/stop.js";
-import { memoryLogObserver } from "./services/memory-log.js";
 import { logger } from "./services/logger.js";
 import { runSession } from "./session/runner.js";
 
@@ -61,11 +60,14 @@ registerCommand(stopService);
 
 // 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
 // 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。
+// （2026-10-28 记忆重构：原 memoryLogObserver 退役——入站转录已上移到
+//  dispatcher 的 recordInbound 收口，观察者不再承担落库职责。列表暂空，
+//  基础设施保留，未来观察者（如随机应答）仍走这里。）
 const observers: ObserverService[] = [];
 function registerObserver(svc: ObserverService): void {
   observers.push(svc);
 }
-registerObserver(memoryLogObserver);
+void registerObserver; // 暂无注册者；保留机制声明避免 unused 报错
 
 // ---------- 把原始事件规整成统一 context ----------
 // 解析规则：内容以 / 开头 → 去掉 /，按第一个空格切成 command + args；

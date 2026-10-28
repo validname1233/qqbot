@@ -70,8 +70,9 @@ const DeepSearchState = new StateSchema({
   // preflight 分流标记：true = 用户给了 URL 且已预读，跳过 searchNode 直接进
   // planNode；false = 无 URL，先过 searchNode（flash 改写 + 单次搜索）。
   hasStartUrls: z.boolean().default(false),
-  // 本地测试用的开关：true 时跳过短期记忆落库（runDeepSearchLocally 设，
-  // 防止测试污染生产 memory.sqlite）。
+  // 本地测试用的开关（历史名保留）：true = 本地测试入口（runDeepSearchLocally）
+  // 的标记。2026-10-28 记忆重构后深检不再落库（dispatcher/出站收口代劳），
+  // 该字段已无行为效果，仅作为测试入口的身份标记保留。
   skipMemory: z.boolean().default(false),
   turnCount: z.number().default(0),
   deadline: z.number().default(0),
@@ -478,9 +479,10 @@ const deepSearchGraph = new StateGraph(DeepSearchState)
   .addEdge("synthesize", END)
   .compile();
 
-// 生产入口：/深度检索 命令进来走这里。记忆策略（总设计 §3.5）：只落
-// 「问题 + 报告」两条进短期记忆，中间的 tool 消息全部不落库——后续 /Agent 能看到
-// "查过什么、结论是什么"，但 20 条窗口不被页面正文挤爆。
+// 生产入口：/深度检索 命令进来走这里。记忆策略（2026-10-28 记忆重构后）：
+// 深检自身零入库——问题行由 dispatcher 入站收口记 chat_user（用户发的
+// /深度检索 xxx 是普通消息），报告由出站收口（messages.ts）记 chat_bot。
+// 库即窗口，两条路径自动覆盖（总方案模块一 §1.2）。
 export async function runDeepSearch(
   question: string,
   ctx: MessageContext,
@@ -491,9 +493,6 @@ export async function runDeepSearch(
   if (controller === null) {
     return "上一个任务还在跑哦～先发 /stop 停掉它，再重新发起吧。";
   }
-
-  const { sqliteMemoryStore } = await importMemory();
-  const key = tenantKey(ctx.event);
 
   // 进度推送订阅（progress-bus，二期接入）：planNode 的"正在规划路线"和浏览循环
   // 里声明了 progressNote 的工具（search/open_page/interact_page，经 runTool 切面）
@@ -515,8 +514,7 @@ export async function runDeepSearch(
       interruptSignal: controller.signal,
     });
 
-    // 被 /stop 中断：拿部分材料出个简短的"已中断"说明（比静默更适合深检——
-    // 用户可能想知道停在哪了），不落库（这条不是正式报告）。
+    // 被 /stop 中断：静默返回（与主 Agent 的中断语义一致），报告未产出。
     if (controller.signal.aborted) {
       return "";
     }
@@ -524,12 +522,6 @@ export async function runDeepSearch(
     const report = result.report ?? "（深度检索没有生成报告）";
     logger.node("agent", `[/深度检索] 完成 → 报告 ${report.length} 字 (+${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);
 
-    await sqliteMemoryStore.append(
-      key,
-      { openid: ctx.event.authorOpenid, name: ctx.event.authorName },
-      { role: "user", content: `${ctx.event.authorName}：/深度检索 ${question}` },
-      { role: "assistant", content: report },
-    );
     return report;
   } finally {
     unsubscribeProgress();
@@ -537,14 +529,6 @@ export async function runDeepSearch(
     // A 档生命周期落点：无论成败，图跑完就关浏览器
     await releaseBrowser();
   }
-}
-
-// 延迟 import：memory 依赖 node:sqlite，本地测试（run-graph.ts）不想连生产库时
-// 也能复用本模块。放函数内而不是顶部，避免测试路径加载存储层。
-async function importMemory() {
-  const { tenantKey } = await import("../session/key.js");
-  const { sqliteMemoryStore } = await import("./memory/sqlite.js");
-  return { tenantKey, sqliteMemoryStore };
 }
 
 // 本地测试入口（test/deep_research/run-graph.ts 用）：跳过短期记忆落库，
