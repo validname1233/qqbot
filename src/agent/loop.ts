@@ -176,7 +176,14 @@ async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
     ...afterProjection,
   ];
 
-  const final = await callModel(messages, undefined, config.agentModel, true, "finalizeNode");
+  // thinking 必须关（2026-10-28 真机事故）：DeepSeek 思考模式要求输入里的
+  // assistant 消息携带 reasoning_content 回传——新架构的 finalize 复用真实
+  // 消息序列（含投影里的 chat_bot 历史 + 本轮 judge 输出），而思维链从未被
+  // 存储（ChatMessage 无此字段，judge 轮 thinking=off 本就无产出），永远
+  // 拿不出 reasoning_content → 400 "must be passed back"。旧架构的巨型
+  // user 文本 blob 恰好零 assistant，意外合规；结构修对后此雷才暴露。
+  // 强模型（agentModel）保留，thinking 舍弃——收尾质量的主体在模型本身。
+  const final = await callModel(messages, undefined, config.agentModel, false, "finalizeNode");
   const reply = final.content ?? "（Agent 没有返回内容）";
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
