@@ -1,30 +1,31 @@
-// agent/loop.ts —— agent 的核心流程：LangGraph StateGraph 五节点小图
-//（2026-10-28 记忆与上下文重构后的形态，总方案 docs/features/
-// 2026-10-28-记忆与上下文重构总方案.md 模块二）：
-//   prepareContext —— 装配 L1 投影（assembly.projectWindow：最新 reset 之后的
-//                        chat 行 → 形态 B 增量 blob），拼 [system, ...投影, u_now]。
-//   llmCall       —— 带 tools 调模型（judge：意图推断 + 工具决策）。每拿到一次
-//                        输出就地写一行 process（库存真相，v2 就地入库决议）。
-//   plainReply    —— judge 判定无需工具：换人设重答。输入含 judge 的固定话术
-//                        碎念（v6：选项二保留；连续 assistant 协议安全已实证）。
-//   tools         —— 并发执行 tool_calls，结果拼回 messages；每条结果就地写
-//                        process 行（原文全文，零策略）。
-//   finalize      —— 调过工具后的收尾：system 含收尾指令（INSTR 已取消并入
-//                        agent_finalize），user 侧 = 投影 + u_now + 本轮裸序列。
-//   轮次上限 MAX_TOOL_TURNS 不变；改它不用动图结构。
+// agent/loop.ts —— agent 的核心流程：LangGraph StateGraph 四节点图
+//（v9 直通架构，2026-10-28；方案 docs/features/2026-10-28-记忆与上下文重构
+// 总方案.md 模块二 §1.2 v9 决议）：
+//   prepareContext  —— 装配 L1 投影（assembly.projectWindow）+ u_now。
+//   llmCall         —— 唯一的模型节点：人格+工具一体的 system（agent_unified）。
+//                         无 tool_calls → 输出即最终回复（带人格，直出）；
+//                         有 tool_calls → 进 tools 循环。碎念作为中间产物
+//                         结构性不存在（v6"保留碎念"决议随三场景架构退役——
+//                         真机证实末位 assistant 会被模型当"自己说到一半的
+//                         话"续写，回复只剩后半句）。
+//   tools           —— 并发执行 tool_calls，结果拼回 messages + 就地写
+//                         process 行；轮次未满回 llmCall。
+//   forcedFinalize  —— 轮次触顶的按需降级分支（dsh overflow 模式）：
+//                         消息原样（同 system 同模型，缓存家族不分裂）、
+//                         不传 tools（协议级逼出文本）、末尾注入恒定降级
+//                         指令。主动停路径不经过这里（天然有内容可出）。
 //
 // 入库职责（v2/v7 决议）：本文件只写 process 行（llmCall/toolsNode 就地）；
-// chat_user 由 dispatcher 入站收口、chat_bot 由出站收口（messages.ts）——
-// runAgentTurn 尾部的批量落库段已删除。
+// chat_user 由 dispatcher 入站收口、chat_bot 由出站收口（messages.ts）。
 
 import { StateGraph, StateSchema, ReducedValue, START, END } from "@langchain/langgraph";
 import { z } from "zod";
-import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
 import { projectWindow, buildCurrentUserMessage } from "./assembly.js";
 import { callModel } from "../services/model.js";
 import { logger } from "../services/logger.js";
 import { getSystemPrompt } from "../services/prompts/builder.js";
+import { LOOP_EXHAUSTED_SIGNAL } from "../services/prompts/functional.js";
 import { runTool, toolSchemas } from "./registry.js";
 import { appendEvent } from "./memory/events.js";
 import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
@@ -32,18 +33,11 @@ import { tenantKey } from "../session/key.js";
 import { subscribeProgress } from "../services/progress-bus.js";
 import type { ChatMessage } from "./types.js";
 
-// llmCall 用的系统提示词：只负责"读历史 → 推断意图 → 判断要不要调工具"，
-// 不承担人设/表达任务（纯功能场景，builder 不拼人格）。它的文字输出在无工具
-// 路径被塑形为固定话术（见 agent_judge 提示词），不会展示给用户。
-
-// 工具调用最多几轮。2 表示：允许一次串行依赖——第一轮工具（如 get_time）的
-// 返回值可以被第二轮工具（如 search）当参数用。
+// 工具调用最多几轮。2 表示：允许一次串行依赖。轮次触顶且模型仍想调工具时
+// 走 forcedFinalize 降级（v9：二期 token 预算判定落地后，触发器可换成预算）。
 const MAX_TOOL_TURNS = 2;
 
 // messages 用累加式的 ReducedValue：每个节点只管返回"这一步新增的消息"。
-// ctx 用 z.custom 只当类型标记，不做运行时校验（进程内对象）。
-// projection：prepareContext 写入的 L1 投影（plainReply/finalize 复用）。
-// interruptSignal：/stop 的中断信号，llmCall 的模型调用带它。
 const AgentState = new StateSchema({
   messages: new ReducedValue(z.custom<ChatMessage[]>(), {
     reducer: (current: ChatMessage[], next: ChatMessage[]) => [...current, ...next],
@@ -75,7 +69,7 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   step("u_now 构造（含当轮图片展开）");
 
   const initialMessages: ChatMessage[] = [
-    { role: "system", content: getSystemPrompt(state.ctx.event, "agent_judge") },
+    { role: "system", content: getSystemPrompt(state.ctx.event, "agent_unified") },
     ...projected,
     uNow,
   ];
@@ -83,8 +77,8 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   return { messages: initialMessages, projection: projected };
 }
 
-// 节点一：带 tools 调模型（judge）。输出就地写一行 process（库存真相）——
-// 含 tool_calls 的 Thought 与无工具路径的固定话术碎念都落。
+// 节点一：唯一的模型节点（judge 职责已并入，v9）。带 tools 调用；
+// 无 tool_calls 的输出直接就是最终回复（reply 出去，出站收口记 chat_bot）。
 async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
   const response = await callModel(
     state.messages,
@@ -105,29 +99,15 @@ async function llmCall(state: AgentStateT): Promise<AgentUpdateT> {
     origin: "agent",
   });
 
+  const hasToolCalls = response.tool_calls !== undefined && response.tool_calls.length > 0;
   return {
     messages: [
       { role: "assistant", content: response.content, tool_calls: response.tool_calls },
     ],
+    // 无 tool_calls = 最终回复（直通）；有 tool_calls 时 reply 不设（由后续
+    // 轮次或 forcedFinalize 产出）。
+    ...(hasToolCalls ? {} : { reply: response.content ?? "（Agent 没有返回内容）" }),
   };
-}
-
-// 节点一.五：judge 判定"不需要工具"时走到这里。输入数组 = 投影 + u_now +
-// judge 的固定话术碎念（v6 决议：选项二保留——连续 assistant 协议安全已实证，
-// 碎念被塑形为完整自洽的一句话，续写风险极低）。换成日常人设重新生成。
-async function plainReply(state: AgentStateT): Promise<AgentUpdateT> {
-  // state.messages：[0] agent_judge system, [1..n-1] 投影+u_now, [n] 碎念。
-  // 新 messages：日常 system + 投影 + u_now + 碎念（保留 v6；daily 的 system
-  // 声明"判断话术是路由中间产物，无视其表达、回答用户最后的问题"）。
-  const messages: ChatMessage[] = [
-    { role: "system", content: getSystemPrompt(state.ctx.event, "daily") },
-    ...state.projection,
-    ...state.messages.slice(-2), // u_now + 碎念（最后两条）
-  ];
-
-  const plain = await callModel(messages, undefined, undefined, undefined, "plainReply");
-  const reply = plain.content ?? "（Agent 没有返回内容）";
-  return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
 // 节点二：本地并发执行 tool_calls。结果拼回 messages + 就地写 process 行
@@ -162,63 +142,54 @@ async function toolsNode(state: AgentStateT): Promise<AgentUpdateT> {
   return { messages: toolMessages, turnCount: state.turnCount + 1 };
 }
 
-// 节点三：调过工具后的统一收尾。user 侧 = 投影 + u_now + 本轮裸序列
-//（assistant(tool_calls)/tool 对，协议配对原样）；system 含收尾指令
-//（agent_finalize，INSTR 已取消并入）。不再把历史重引用成平文本。
-async function finalizeNode(state: AgentStateT): Promise<AgentUpdateT> {
-  logger.node("agent", `finalize 收尾（基于 ${state.messages.filter((m) => m.role === "tool").length} 条工具结果）`);
-  // 本轮新增 = 投影之后的消息（u_now 起到末尾，含全部工具序列）。
-  const afterProjection = state.messages.slice(state.projection.length + 1);
-
+// 节点三（按需降级）：轮次触顶且模型仍在要工具时，撤 tools + 注入恒定降级
+// 指令重试一次——协议级逼出文本（无工具可选，只能作答）。消息原样、同
+// system 同模型：缓存家族不分裂（仅 tools 字段有无的差别，降级轮独付一次）。
+async function forcedFinalize(state: AgentStateT): Promise<AgentUpdateT> {
+  logger.node("agent", `轮次触顶降级收尾（基于 ${state.messages.filter((m) => m.role === "tool").length} 条工具结果）`);
+  // messages[0] 是 system；其后原样 + 降级指令（单一真相源：M2.3 提示词引述
+  // 同一信号的语义，冒烟测试锚定一致）。
   const messages: ChatMessage[] = [
-    { role: "system", content: getSystemPrompt(state.ctx.event, "agent_finalize") },
-    ...state.projection,
-    ...afterProjection,
+    ...state.messages,
+    { role: "user", content: LOOP_EXHAUSTED_SIGNAL },
   ];
 
-  // thinking 必须关（2026-10-28 真机事故）：DeepSeek 思考模式要求输入里的
-  // assistant 消息携带 reasoning_content 回传——新架构的 finalize 复用真实
-  // 消息序列（含投影里的 chat_bot 历史 + 本轮 judge 输出），而思维链从未被
-  // 存储（ChatMessage 无此字段，judge 轮 thinking=off 本就无产出），永远
-  // 拿不出 reasoning_content → 400 "must be passed back"。旧架构的巨型
-  // user 文本 blob 恰好零 assistant，意外合规；结构修对后此雷才暴露。
-  // 强模型（agentModel）保留，thinking 舍弃——收尾质量的主体在模型本身。
-  const final = await callModel(messages, undefined, config.agentModel, false, "finalizeNode");
+  const final = await callModel(
+    messages,
+    undefined, // 不传 tools：撤工具是本节点存在的全部理由
+    undefined,
+    false,
+    "forcedFinalize",
+    state.interruptSignal ?? undefined,
+  );
   const reply = final.content ?? "（Agent 没有返回内容）";
   return { messages: [{ role: "assistant", content: reply }], reply };
 }
 
-// 路由一：llmCall 之后。plainReply 唯一入口 = 从未调过工具（历史性判据）：
-// "调完工具后主动停止"的路径（看完工具结果给纯文本）必须走 finalize——
-// 那里显式拼工具结果 + pro 模型收尾，答案保住（2026-09-18 事故的教训）。
-function afterLlmCall(state: AgentStateT): "plainReply" | "tools" | "finalize" {
+// 路由一：llmCall 之后。有 tool_calls → tools；没有 → END（reply 已在 llmCall
+// 设好——无工具路径直出，主动停路径（看完工具结果给纯文本）同理直出）。
+function afterLlmCall(state: AgentStateT): "tools" | "__end__" {
   const lastMessage = state.messages[state.messages.length - 1];
   const toolCalls = lastMessage?.tool_calls;
-  const hasToolCalls = toolCalls !== undefined && toolCalls.length > 0;
-  if (hasToolCalls && state.turnCount < MAX_TOOL_TURNS) {
-    return "tools";
-  }
-  const usedTools = state.messages.some((msg) => msg.role === "tool");
-  return usedTools ? "finalize" : "plainReply";
+  return toolCalls !== undefined && toolCalls.length > 0 ? "tools" : "__end__";
 }
 
-// 路由二：tools 之后——轮次未到上限回 llmCall，到了去 finalize。
-function afterTools(state: AgentStateT): "llmCall" | "finalize" {
-  return state.turnCount < MAX_TOOL_TURNS ? "llmCall" : "finalize";
+// 路由二：tools 之后——轮次未满回 llmCall 再问一次；触顶去 forcedFinalize
+//（降级只在"轮次用尽"时发生；轮次内模型的主动停止由 afterLlmCall 处理）。
+function afterTools(state: AgentStateT): "llmCall" | "forcedFinalize" {
+  return state.turnCount < MAX_TOOL_TURNS ? "llmCall" : "forcedFinalize";
 }
 
 const agentGraph = new StateGraph(AgentState)
   .addNode("prepareContext", prepareContext)
   .addNode("llmCall", llmCall)
-  .addNode("plainReply", plainReply)
   .addNode("tools", toolsNode)
-  .addNode("finalize", finalizeNode)
+  .addNode("forcedFinalize", forcedFinalize)
   .addEdge(START, "prepareContext")
   .addEdge("prepareContext", "llmCall")
-  .addConditionalEdges("llmCall", afterLlmCall, ["plainReply", "tools", "finalize"])
-  .addEdge("plainReply", END)
-  .addConditionalEdges("tools", afterTools, ["llmCall", "finalize"])
-  .addEdge("finalize", END)
+  .addConditionalEdges("llmCall", afterLlmCall, ["tools", "__end__"])
+  .addConditionalEdges("tools", afterTools, ["llmCall", "forcedFinalize"])
+  .addEdge("forcedFinalize", END)
   .compile();
 
 export async function runAgentTurn(
@@ -240,8 +211,8 @@ export async function runAgentTurn(
 
   try {
     // messages 初始值留空：prepareContext 负责拼 [system, ...投影, u_now]。
-    // 入库不再在此处发生——chat_user 由 dispatcher 收口、process 由节点就地、
-    // chat_bot 由出站收口（旧批量落库段已删除，v2 决议）。
+    // 入库不在 runAgentTurn：chat_user 由 dispatcher 收口、process 由节点
+    // 就地、chat_bot 由出站收口（v2 决议）。
     const result = await agentGraph.invoke({
       messages: [],
       ctx,

@@ -75,6 +75,17 @@ const zh = estimateTokens("今天天气不错".repeat(10));
 const en = estimateTokens("hello world ".repeat(10));
 check(`⑤ 估算（中文${zh}/英文${en} tokens，均 >0 且量级合理）`, zh > 0 && en > 0 && zh > en);
 
+// ⑥ 提示词 v2 锚定（方案 2026-10-29-系统提示词模块化重构 §8）：
+//    M1 示例行必须与 renderBlobLine 实际输出逐字节同构；M2.3 引述的终止
+//    信号必须与 LOOP_EXHAUSTED_SIGNAL 同源（取信号开头短语锚定）。
+import { renderBlobLine } from "../src/agent/assembly.js";
+import { AGENT_UNIFIED_HEAD, LOOP_EXHAUSTED_SIGNAL } from "../src/services/prompts/functional.js";
+const blobLineA = renderBlobLine("小明", "今天下午去打球吗", "");
+const blobLineB = renderBlobLine("小红", "我放了个假期的照片 [图片]{一只橘猫趴在窗台上晒太阳，身后是绿植和半开的窗户}", "");
+check("⑥ M1 示例行与 renderBlobLine 输出同构（纯文本行）", AGENT_UNIFIED_HEAD.includes(blobLineA));
+check("⑥ M1 示例行与 renderBlobLine 输出同构（带图片行）", AGENT_UNIFIED_HEAD.includes(blobLineB));
+check("⑥ M2.3 终止信号引述与 LOOP_EXHAUSTED_SIGNAL 一致", AGENT_UNIFIED_HEAD.includes(LOOP_EXHAUSTED_SIGNAL.slice(0, 11)));
+
 clearEvents(KEY);
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail > 0 ? 1 : 0);

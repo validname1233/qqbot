@@ -37,7 +37,8 @@ export function estimateTokens(text: string): number {
 
 // blob 行形态的单一真相源：历史 user 行与 u_now 共用（模型看到统一格式）。
 // 文字在前、图片段在后（v8：图文相对顺序平台不给，此为自定义规范顺序）。
-function renderBlobLine(speaker: string, text: string, imagePart: string): string {
+// 导出供冒烟测试锚定 M1 提示词示例与其同构（提示词 v2 方案 §8）。
+export function renderBlobLine(speaker: string, text: string, imagePart: string): string {
   const content = `${text}${imagePart}`.trim();
   return JSON.stringify({
     speaker,
