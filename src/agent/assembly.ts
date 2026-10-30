@@ -58,11 +58,27 @@ export interface Projection {
   chatCount: number; // 参与投影的 chat 行数（条数安全阀口径）
 }
 
+// ---------- 窗口候选过滤（共享真相源） ----------
+
+// v10 两条压缩规则的唯一实现：projectWindow（L1 投影）与 recall_memory
+//（L2 回看取数）共用——保证"窗口内/外"的边界判定恒一致（recall 从窗口外
+// 第一条往回取，见 recall-memory.ts；边界漂移 = 重叠或留缝）。
+// 输入：全部 chat 行（正序）；输出：窗口内行（正序）。
+export function windowCandidates(rows: EventRow[]): EventRow[] {
+  // 时间窗（规则②）：created_at 距装配时刻超过 SESSION_WINDOW_HOURS 的行
+  // 离开投影。设 0 关闭。窗口语义是滑动的——活跃会话跟着"现在"前滚。
+  const windowMs = config.sessionWindowHours * 3600_000;
+  const withinWindow =
+    windowMs <= 0 ? rows : rows.filter((r) => Date.now() - r.createdAt <= windowMs);
+  // 条数截断（规则①）：候选行数超上限时只保留最近 N 行（尾部对齐）。
+  const max = config.contextMaxMessages;
+  return withinWindow.length > max ? withinWindow.slice(-max) : withinWindow;
+}
+
 // 形态 B 装配：chat 行流 → [批(user 消息), 裸 assistant, 批, …]。
 // 规则（§1.2 终版）：批 = 两个 bot 回复之间的 user 行段；连续 chat_bot 序列
 // 整体作一个隔断；process 行不投影（v7）；排除当前消息行（u_now 由 ctx 构造）。
-// 压缩（v10）：条数截断（保留最近 CONTEXT_MAX_MESSAGES 行）+ 时间窗
-//（SESSION_WINDOW_HOURS，超窗行离开投影）——纯投影行为，不写任何标记行。
+// 压缩（v10）：见 windowCandidates——纯投影行为，不写任何标记行。
 export async function projectWindow(ctx: MessageContext): Promise<Projection> {
   const key = tenantKey(ctx.event);
 
@@ -72,20 +88,8 @@ export async function projectWindow(ctx: MessageContext): Promise<Projection> {
     (r) => !(r.kind === "chat_user" && r.qqMsgId === ctx.event.msgId),
   );
 
-  // 步骤 5a 时间窗（v10 规则②）：created_at 距装配时刻超过 N 小时的行离开
-  // 投影。按行级时间戳过滤（行有序，等价于找最老的合规行之后的全部）。
-  // 设 0 关闭。时间维度上旧消息整块滑出，窗口与"最近的会话"对齐。
-  const windowMs = config.sessionWindowHours * 3600_000;
-  const withinWindow =
-    windowMs <= 0
-      ? candidates
-      : candidates.filter((r) => Date.now() - r.createdAt <= windowMs);
-
-  // 步骤 5b 条数截断（v10 规则①）：候选行数超上限时只保留最近 N 行
-  //（尾部对齐——最新上下文优先，旧行整块丢弃）。
-  const maxMessages = config.contextMaxMessages;
-  const kept =
-    withinWindow.length > maxMessages ? withinWindow.slice(-maxMessages) : withinWindow;
+  // 步骤 5：v10 压缩（时间窗 + 条数截断，共享实现）。
+  const kept = windowCandidates(candidates);
 
   // 步骤 3+4：user 行渲染（speaker/content 字段 + 图片段懒展开）。
   // 同一行恒渲染同一字符串（描述写后不重写——缓存红线）。
@@ -131,7 +135,7 @@ export async function projectWindow(ctx: MessageContext): Promise<Projection> {
   if (candidates.length !== kept.length) {
     logger.info(
       "agent",
-      `L1 压缩生效：候选 ${candidates.length} 行 → 保留 ${kept.length} 行（条数上限 ${maxMessages}，时间窗 ${config.sessionWindowHours}h）`,
+      `L1 压缩生效：候选 ${candidates.length} 行 → 保留 ${kept.length} 行（条数上限 ${config.contextMaxMessages}，时间窗 ${config.sessionWindowHours}h）`,
     );
   }
 

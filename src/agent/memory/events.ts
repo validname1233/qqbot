@@ -169,7 +169,7 @@ export function chatRowsAll(key: string): EventRow[] {
   return raw.map(toRow);
 }
 
-// L2 取数：最近 n 条 chat 行（recall_memory 用），正序返回。
+// L2 取数之一：最近 n 条 chat 行（recall_memory 用），正序返回。
 const chatTailStmt = db.prepare(`
   SELECT * FROM conversation_events
   WHERE key = ? AND kind IN ('chat_user', 'chat_bot')
@@ -178,6 +178,21 @@ const chatTailStmt = db.prepare(`
 
 export function chatRows(key: string, n: number): EventRow[] {
   const raw = chatTailStmt.all(key, n) as unknown as RawRow[];
+  return raw.reverse().map(toRow);
+}
+
+// L2 取数之二（recall 窗口外回看）：id 小于 beforeId 的最近 n 条 chat 行，
+// 正序返回。recall_memory 用它取"L1 窗口之外"的历史（窗口内模型原文可见，
+// 无需回看）——beforeId = 窗口最早行的 id（由装配层的 windowCandidates 算出，
+// 保证边界与投影口径一致）。
+const chatBeforeStmt = db.prepare(`
+  SELECT * FROM conversation_events
+  WHERE key = ? AND id < ? AND kind IN ('chat_user', 'chat_bot')
+  ORDER BY id DESC LIMIT ?
+`);
+
+export function chatRowsBefore(key: string, beforeId: number, n: number): EventRow[] {
+  const raw = chatBeforeStmt.all(key, beforeId, n) as unknown as RawRow[];
   return raw.reverse().map(toRow);
 }
 
