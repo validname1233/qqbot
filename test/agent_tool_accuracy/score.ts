@@ -106,13 +106,7 @@ export const TOOL_SCHEMAS: Record<
     properties: { seconds: { type: "integer" }, description: { type: "string" } },
     required: ["seconds", "description"],
   },
-  add_memory: { properties: { content: { type: "string" } }, required: ["content"] },
-  delete_memory: { properties: { query: { type: "string" } }, required: ["query"] },
-  clear_all_memories: { properties: {}, required: [] },
-  recall_memory: {
-    properties: { keywords: { type: "array", items: { type: "string" } } },
-    required: ["keywords"],
-  },
+  recall_memory: { properties: {}, required: [] },
 };
 
 // ---------- 路径匹配 ----------
@@ -320,7 +314,8 @@ export function checkRuleOnCall(
     case "type": {
       if (parsed === null) return { status: "fail", reason: "arguments 非法 JSON，无法比对" };
       const v = parsed[rule.field];
-      // 现用例中 type 只用于 recall_memory.keywords（string[]，工具描述限定 1~5 个）
+      // string_array 规则（原为 recall_memory.keywords 设计；v4 零参数化后现无
+      // 用例使用，保留评分器分支以防未来 array 参数工具复用）
       if (!Array.isArray(v) || !v.every((x) => typeof x === "string")) {
         return { status: "fail", reason: `${rule.field} 应为字符串数组，实际 ${JSON.stringify(v)}` };
       }

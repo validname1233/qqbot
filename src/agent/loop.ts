@@ -24,8 +24,7 @@ import type { MessageContext } from "../types.js";
 import { projectWindow, buildCurrentUserMessage } from "./assembly.js";
 import { callModel } from "../services/model.js";
 import { logger } from "../services/logger.js";
-import { getSystemPrompt } from "../services/prompts/builder.js";
-import { LOOP_EXHAUSTED_SIGNAL } from "../services/prompts/functional.js";
+import { getAgentSystemPrompt, LOOP_EXHAUSTED_SIGNAL } from "../services/prompts/functional.js";
 import { runTool, toolSchemas } from "./registry.js";
 import { appendEvent } from "./memory/events.js";
 import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
@@ -69,7 +68,7 @@ async function prepareContext(state: AgentStateT): Promise<AgentUpdateT> {
   step("u_now 构造（含当轮图片展开）");
 
   const initialMessages: ChatMessage[] = [
-    { role: "system", content: getSystemPrompt(state.ctx.event, "agent_unified") },
+    { role: "system", content: getAgentSystemPrompt(state.ctx.event) },
     ...projected,
     uNow,
   ];

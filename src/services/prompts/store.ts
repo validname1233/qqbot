@@ -4,7 +4,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { setPersonalityCache, clearPersonalityCache } from "./builder.js";
+import { setPersonalityCache, clearPersonalityCache } from "./functional.js";
 import { logger } from "../logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,8 +41,10 @@ const listAllStmt = db.prepare<[], PersonalityRow>(
   "SELECT key, personality, updated_at FROM group_personalities",
 );
 
-// 读取一条记录（运行时基本用不上，因为都走缓存；这里主要用于调试或管理端查询）
-export function getPersonality(key: string): string | null {
+// 读取一条记录（运行时基本用不上，因为都走缓存；这里主要用于调试或管理端查询）。
+// 2026-10-29 改名：getPersonality 这个名字现在归 functional.ts 的缓存取用函数
+//（入参是 event、带默认兜底）；这是裸查库版，改名避免两个同名不同签名的导出。
+export function getPersonalityFromDb(key: string): string | null {
   const row = getStmt.get(key);
   return row ? row.personality : null;
 }

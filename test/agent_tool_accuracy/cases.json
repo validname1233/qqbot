@@ -1988,648 +1988,6 @@
     "notes": "金标依据：上下文（含 historySeed）中没有任何已设提醒，『别提醒我了』是取消意图而非设置意图；正确行为是回复当前没有已设提醒或向用户确认要取消什么。任何情况下都不得据此新设提醒。"
   },
   {
-    "id": "add-memory-001",
-    "category": "add_memory",
-    "description": "单聊记住事实：生日信息",
-    "input": "记住哦，我生日是农历七月十五，到时候记得祝我生日快乐呀",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "add_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "必含信息点：『生日』『农历七月十五』；不得包含『记住/记一下』等指令词本身"
-      }
-    ],
-    "toolResults": {
-      "add_memory": "记住了：你的生日是农历七月十五"
-    },
-    "notes": "金标依据：用户明确说『记住』，触发 add_memory；content 为用户想记的具体内容。指令词剔除通过 semantic hint 约束（正则难覆盖变体），人工校验 content 中不得出现『记住』『帮我记』等字样。"
-  },
-  {
-    "id": "add-memory-002",
-    "category": "add_memory",
-    "description": "单聊记住事实：地址信息",
-    "input": "帮我记一下，我搬家了，新地址是幸福路88号3栋502，以后寄东西都寄这边",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "add_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "必含信息点：『幸福路88号』『3栋502』（或完整新地址表述）；不得含指令词"
-      }
-    ],
-    "toolResults": {
-      "add_memory": "记住了：你的新地址是幸福路88号3栋502"
-    },
-    "notes": "金标依据：『帮我记一下』为明确记忆指令；地址要素（路名门牌+栋室号）须完整保留，不得只记『搬家了』。"
-  },
-  {
-    "id": "add-memory-003",
-    "category": "add_memory",
-    "description": "单聊记住事实：工作信息",
-    "input": "以后要记得啊，我是做游戏策划的，主要搞数值这一块",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "add_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "必含信息点：『游戏策划』『数值』；不得含指令词"
-      }
-    ],
-    "toolResults": {
-      "add_memory": "记住了：你是游戏策划，主要做数值方向"
-    },
-    "notes": "金标依据：『以后要记得』属于明确记忆指令；职业+细分方向两个信息点均需保留。"
-  },
-  {
-    "id": "add-memory-004",
-    "category": "add_memory",
-    "description": "单聊记住事实：喜好",
-    "input": "偷偷跟你说，记住了我最喜欢的歌手是周杰伦，等他开演唱会我找你抢票",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "add_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "必含信息点：『最喜欢』『周杰伦』；不得含指令词"
-      }
-    ],
-    "toolResults": {
-      "add_memory": "记住了：你最喜欢的歌手是周杰伦"
-    },
-    "notes": "金标依据：『记住了我最喜欢的…』为明确记忆指令；句子中夹杂抢票闲聊，content 只应记喜好本身。"
-  },
-  {
-    "id": "add-memory-005",
-    "category": "add_memory",
-    "description": "群聊：值得全群共享的事实（集体活动安排）",
-    "input": "大家记住哈，这周五晚上八点老时间开黑打副本，别迟到",
-    "context": {
-      "scene": "group",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "add_memory",
-            "round": 1
-          }
-        ]
-      ],
-      "allowExtraCalls": true
-    },
-    "argumentRules": [
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "必含信息点：『周五/这周五』『晚上八点』『打副本/开黑』；不得含指令词"
-      }
-    ],
-    "toolResults": {
-      "add_memory": "记住了：这周五晚上八点开黑打副本"
-    },
-    "notes": "金标依据：群聊记忆全群共享，集体活动安排是典型值得共享的群事实，且用户明确说『大家记住』，应直接调用。 【金标修订 2026-10-13 v2】allowExtraCalls=true：金标工具按序被覆盖即通过，多余调用（get_time/重复 search/拆多次记忆）与轮次先后不判错；漏调与调错工具仍判错。"
-  },
-  {
-    "id": "add-memory-006",
-    "category": "add_memory",
-    "description": "群聊：私人信息入群记忆，金标允许直接调用但先确认更优",
-    "input": "帮我记一下，我家wifi密码是88888888，省得我老忘",
-    "context": {
-      "scene": "group",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "add_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "必含信息点：『wifi/WiFi』『密码』『88888888』；不得含指令词"
-      }
-    ],
-    "toolResults": {
-      "add_memory": "记住了：你家 wifi 密码是 88888888"
-    },
-    "notes": "金标依据：用户有明确记忆指令，直接调用可接受，故 shouldCallTools=true。但群聊记忆全群共享，私人密码类信息更优行为是先向用户确认『这条会全群可见，确定要记吗』——先确认再调用的分支 paths 无法表达，审核放行；两种行为均不算错。"
-  },
-  {
-    "id": "add-memory-007",
-    "category": "add_memory",
-    "description": "多信息点一次记住：content 需概括全部信息",
-    "input": "帮我记一下这几件事：我每天坐地铁5号线上下班，工牌号是A1024，午饭一般12点吃",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "add_memory",
-            "round": 1
-          }
-        ]
-      ],
-      "allowExtraCalls": true
-    },
-    "argumentRules": [
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "必含全部信息点：『地铁5号线』『工牌号A1024』『午饭12点』；三项缺一不可，不得含指令词"
-      }
-    ],
-    "toolResults": {
-      "add_memory": "记住了：你坐地铁5号线上下班，工牌号A1024，午饭一般12点吃"
-    },
-    "notes": "金标依据：一次明确的多信息记忆请求；content 应概括全部三个信息点，丢失任一项判不合格。 【金标修订 2026-10-13 v2】allowExtraCalls=true：金标工具按序被覆盖即通过，多余调用（get_time/重复 search/拆多次记忆）与轮次先后不判错；漏调与调错工具仍判错。"
-  },
-  {
-    "id": "add-memory-008",
-    "category": "add_memory",
-    "description": "对照：仅闲聊提及信息、无记忆指令，不应调用",
-    "input": "唉，我今天去了趟医院，人贼多，排了俩小时队",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": false,
-      "paths": []
-    },
-    "argumentRules": [],
-    "toolResults": {},
-    "notes": "金标依据：用户只是分享日常、未表达『记住/记一下』等记忆意图，调用 add_memory 属过度主动；正确行为是共情闲聊回应。"
-  },
-  {
-    "id": "delete-memory-001",
-    "category": "delete_memory",
-    "description": "明确单条删除：historySeed 提供已有记忆线索",
-    "input": "把我家猫名字那条记忆删了吧，它改名了",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [
-      {
-        "role": "user",
-        "content": "记住我家猫叫年糕，特别能吃"
-      },
-      {
-        "role": "assistant",
-        "content": "好嘞，记住了，年糕是个小吃货～"
-      }
-    ],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "delete_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "delete_memory",
-        "field": "query",
-        "rule": "semantic",
-        "hint": "应包含『猫』『年糕/猫名字』等自然语言描述，而非任何 id"
-      }
-    ],
-    "toolResults": {
-      "delete_memory": "已经把这条记忆删掉了～"
-    },
-    "notes": "金标依据：明确的单条删除意图，且 historySeed 给出记忆内容线索；query 是对目标记忆的自然语言描述，不得编造 id。"
-  },
-  {
-    "id": "delete-memory-002",
-    "category": "delete_memory",
-    "description": "明确单条删除：删除口味偏好记忆（话术自带线索）",
-    "input": "忘掉我说过不喜欢吃辣那回事吧，我最近迷上川菜了",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "delete_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "delete_memory",
-        "field": "query",
-        "rule": "semantic",
-        "hint": "应包含『吃辣/不喜欢吃辣』相关描述"
-      }
-    ],
-    "toolResults": {
-      "delete_memory": "已经把这条记忆删掉了～"
-    },
-    "notes": "金标依据：『忘掉…』为明确删除指令，目标记忆内容在话术中自描述；query 应指向口味偏好而非川菜。"
-  },
-  {
-    "id": "delete-memory-003",
-    "category": "delete_memory",
-    "description": "明确单条删除：删除工作相关记忆",
-    "input": "删除关于我前公司的那段记忆吧，不想再留着了",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "delete_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "delete_memory",
-        "field": "query",
-        "rule": "semantic",
-        "hint": "应包含『前公司/以前公司/工作单位』相关描述"
-      }
-    ],
-    "toolResults": {
-      "delete_memory": "已经把这条记忆删掉了～"
-    },
-    "notes": "金标依据：『删除关于…的记忆』为标准删除话术；『前公司』是主题级描述，query 语义等价即可。"
-  },
-  {
-    "id": "delete-memory-004",
-    "category": "delete_memory",
-    "description": "模糊描述删除：目标记忆指代不精确",
-    "input": "就……你之前帮我记过一条关于周末计划的，把那条删了呗，具体我也记不清了",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "delete_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "delete_memory",
-        "field": "query",
-        "rule": "semantic",
-        "hint": "应包含『周末计划/周末安排』相关模糊描述，允许带上用户的不确定语气"
-      }
-    ],
-    "toolResults": {
-      "delete_memory": "已经把这条记忆删掉了～"
-    },
-    "notes": "金标依据：虽然描述模糊，但删除意图明确且给出了主题词，应调用 delete_memory 交由检索匹配，而不是反问到底删哪条（反问澄清也可接受，审核放行）。"
-  },
-  {
-    "id": "delete-memory-005",
-    "category": "delete_memory",
-    "description": "对照：无删除意图，是回忆询问，应走 recall 而非 delete",
-    "input": "你还记得我喜欢什么吗？考考你",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "recall_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "type",
-        "hint": "字符串数组，长度 1~5"
-      },
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "semantic",
-        "hint": "可接受关键词如『喜欢』『喜好』『喜欢什么』等用户原词或其直接同义词"
-      }
-    ],
-    "toolResults": {
-      "recall_memory": "在最近 300 条记忆中检索\"喜欢\"，命中 1 处：\n── 第 1 处 ──\nuser：我超喜欢蓝色，衣服基本都是蓝色的"
-    },
-    "notes": "金标依据：这是回忆询问（『记得吗』）而非删除意图，绝不应对话术中的『记得』字样误判为 delete_memory；当前上下文无答案，金标为 recall_memory。若模型基于已注入的长期记忆直接回答而不再检索，也可接受（审核放行）。"
-  },
-  {
-    "id": "delete-memory-006",
-    "category": "delete_memory",
-    "description": "对照：删除不存在的记忆，替身返回未命中，金标仍应调用",
-    "input": "把我让你记过的那条『我会开飞机』的记忆删了吧",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "delete_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "delete_memory",
-        "field": "query",
-        "rule": "semantic",
-        "hint": "应包含『开飞机/会开飞机』相关描述"
-      }
-    ],
-    "toolResults": {
-      "delete_memory": "没找到匹配的记忆"
-    },
-    "notes": "金标依据：用户删除意图明确，无论目标记忆是否存在都应发起调用，由工具返回未命中；模型不得凭自身判断『没有这条记忆』而拒绝调用。替身固定返回『没找到匹配的记忆』以检验模型对未命中结果的自然告知。"
-  },
-  {
-    "id": "clear-all-001",
-    "category": "clear_all_memories",
-    "description": "明确全量删除：『删除所有记忆』",
-    "input": "把我的所有记忆都删了吧，我想重新开始",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "clear_all_memories",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "clear_all_memories",
-        "field": "*",
-        "rule": "empty_params"
-      }
-    ],
-    "toolResults": {
-      "clear_all_memories": "好的，已经把所有 3 条长期记忆都删掉了～"
-    },
-    "notes": "金标依据：『所有…都删了』是明确的全量删除意图，满足 clear_all_memories 的触发条件；该工具无参数，不得生成任何字段。"
-  },
-  {
-    "id": "clear-all-002",
-    "category": "clear_all_memories",
-    "description": "明确全量删除：『清空全部』",
-    "input": "清空全部记忆，一条都别给我留",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "clear_all_memories",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "clear_all_memories",
-        "field": "*",
-        "rule": "empty_params"
-      }
-    ],
-    "toolResults": {
-      "clear_all_memories": "好的，已经把所有 3 条长期记忆都删掉了～"
-    },
-    "notes": "金标依据：『清空全部』+『一条都别留』双重强调全量意图，指向 clear_all_memories 而非逐条 delete_memory。"
-  },
-  {
-    "id": "clear-all-003",
-    "category": "clear_all_memories",
-    "description": "明确全量删除：『把记忆都删了』（口语化表达）",
-    "input": "我不想让你记任何东西了，把你那边记的都删了吧",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "clear_all_memories",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "clear_all_memories",
-        "field": "*",
-        "rule": "empty_params"
-      }
-    ],
-    "toolResults": {
-      "clear_all_memories": "好的，已经把所有 3 条长期记忆都删掉了～"
-    },
-    "notes": "金标依据：『记的都删了』中『都』表达全量范围；虽然句首夹带情绪性表述，但全删意图清晰。危险操作，若模型先二次确认再调用也可接受（审核按首工具调用轮次对齐）。"
-  },
-  {
-    "id": "clear-all-004",
-    "category": "clear_all_memories",
-    "description": "对照：单条删除意图不得触发全量清空",
-    "input": "只把关于我生日的那条记忆删了，其他都留着啊",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "delete_memory",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [
-      {
-        "tool": "delete_memory",
-        "field": "query",
-        "rule": "semantic",
-        "hint": "应包含『生日』相关描述"
-      },
-      {
-        "tool": "clear_all_memories",
-        "field": "*",
-        "rule": "forbidden",
-        "hint": "单条删除意图下严禁调用全量清空"
-      }
-    ],
-    "toolResults": {
-      "delete_memory": "已经把这条记忆删掉了～"
-    },
-    "notes": "金标依据：用户明确限定『只删一条、其他留着』，『其他都留着』反向强调非全量；必须走 delete_memory，误调 clear_all_memories 判为严重错误（不可逆危险操作）。argumentRules 中对 clear_all_memories 用 forbidden 显式约束。"
-  },
-  {
-    "id": "clear-all-005",
-    "category": "clear_all_memories",
-    "description": "对照：『整理记忆』不是删除意图，不应调用",
-    "input": "你帮我整理一下记忆呗，感觉你记的东西有点乱",
-    "context": {
-      "scene": "c2c",
-      "authorName": "测试用户"
-    },
-    "historySeed": [],
-    "expected": {
-      "shouldCallTools": true,
-      "allowNoTool": true,
-      "paths": [
-        [
-          {
-            "tool": "clear_all_memories",
-            "round": 1
-          }
-        ]
-      ]
-    },
-    "argumentRules": [],
-    "toolResults": {},
-    "notes": "金标依据：『整理』是组织/梳理诉求，不构成删除或全量清空意图；正确行为是说明暂不支持整理，或结合 recall_memory 了解现状后建议手动删除，但绝不得调用 clear_all_memories 或无目标的 delete_memory。评测隔离环境下首选金标为不调用工具（allowNoTool=true，长期记忆未注入、直接说明最合理）；走 recall_memory 检索也放行（审核口径）。生成 clear_all_memories 或 delete_memory 才判错。"
-  },
-  {
     "id": "recall-memory-001",
     "category": "recall_memory",
     "description": "上次聊过的话题：凭特征描述找回电影名",
@@ -2650,20 +2008,7 @@
         ]
       ]
     },
-    "argumentRules": [
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "type",
-        "hint": "字符串数组，长度 1~5"
-      },
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "semantic",
-        "hint": "应使用对话原词或直接同义词，可接受集合：『电影』『阿凡达』『外星人』中至少含『电影』与『阿凡达/外星人』之一"
-      }
-    ],
+    "argumentRules": [],
     "toolResults": {
       "recall_memory": "在最近 300 条记忆中检索\"阿凡达\"，命中 1 处：\n── 第 1 处 ──\nuser：上次看的阿凡达真不错"
     },
@@ -2690,20 +2035,7 @@
         ]
       ]
     },
-    "argumentRules": [
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "type",
-        "hint": "字符串数组，长度 1~5"
-      },
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "semantic",
-        "hint": "可接受关键词集合：『考证书』『证书』『考试』『考证』等原词或直接同义词"
-      }
-    ],
+    "argumentRules": [],
     "toolResults": {
       "recall_memory": "在最近 300 条记忆中检索\"考证书\"，命中 1 处：\n── 第 1 处 ──\nuser：打算今年把教师资格证考下来"
     },
@@ -2730,20 +2062,7 @@
         ]
       ]
     },
-    "argumentRules": [
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "type",
-        "hint": "字符串数组，长度 1~5"
-      },
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "semantic",
-        "hint": "可接受关键词集合：『推荐』『店』『烤肉』等原词或直接同义词（如『餐厅』）"
-      }
-    ],
+    "argumentRules": [],
     "toolResults": {
       "recall_memory": "在最近 300 条记忆中检索\"推荐 烤肉\"，命中 1 处：\n── 第 1 处 ──\nassistant：推荐你去试试炭火故事，他家烤肉性价比很高"
     },
@@ -2770,20 +2089,7 @@
         ]
       ]
     },
-    "argumentRules": [
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "type",
-        "hint": "字符串数组，长度 1~5"
-      },
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "semantic",
-        "hint": "应包含多个互补关键词：『旅游/旅行/计划』与『云南』及『雪』相关原词，如 [\"旅游\",\"云南\",\"看雪\"]；同义替换（旅行/出游）可接受"
-      }
-    ],
+    "argumentRules": [],
     "toolResults": {
       "recall_memory": "在最近 300 条记忆中检索\"云南 旅游\"，命中 1 处：\n── 第 1 处 ──\nuser：明年一月想去的云南，听说玉龙雪山特别美"
     },
@@ -2859,27 +2165,15 @@
           {
             "tool": "set_reminder",
             "round": 1
-          },
-          {
-            "tool": "add_memory",
-            "round": 1
           }
         ],
         [
           {
             "tool": "set_reminder",
             "round": 1
-          },
-          {
-            "tool": "add_memory",
-            "round": 2
           }
         ],
         [
-          {
-            "tool": "add_memory",
-            "round": 1
-          },
           {
             "tool": "set_reminder",
             "round": 2
@@ -2899,19 +2193,12 @@
         "field": "description",
         "rule": "semantic",
         "hint": "包含给妈妈回电话这一事项，如「给妈妈回电话」"
-      },
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "包含「下周三」与「陪妈妈去医院复查」相关的信息"
       }
     ],
     "toolResults": {
-      "set_reminder": "提醒已设置：600 秒后提醒您给妈妈回电话。",
-      "add_memory": "已记住：下周三要陪妈妈去医院复查。"
+      "set_reminder": "提醒已设置：600 秒后提醒您给妈妈回电话。"
     },
-    "notes": "「十分钟后」基于固定基准 2026-10-12T21:00，seconds=600 为时长直译不依赖 get_time。三条 path 任一命中即通过：Runtime 不强制同轮，同轮并发（path1）或拆成两轮（path2/path3）均可接受；漏调任一工具或多出第三次调用均判错。"
+    "notes": "「十分钟后」基于固定基准 2026-10-12T21:00，seconds=600 为时长直译不依赖 get_time。三条 path 任一命中即通过：Runtime 不强制同轮，同轮并发（path1）或拆成两轮（path2/path3）均可接受；漏调任一工具或多出第三次调用均判错。 【2026-10-30 修正】原金标含已删除的 add_memory 路径，已剔除；保留其余真实工具意图。"
   },
   {
     "id": "multi-tool-002",
@@ -3028,20 +2315,12 @@
           {
             "tool": "open_page",
             "round": 1
-          },
-          {
-            "tool": "add_memory",
-            "round": 1
           }
         ],
         [
           {
             "tool": "open_page",
             "round": 1
-          },
-          {
-            "tool": "add_memory",
-            "round": 2
           }
         ]
       ]
@@ -3052,19 +2331,12 @@
         "field": "url",
         "rule": "exact",
         "value": "https://example.com/article/ai-summary"
-      },
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "并发（path1）时可为「记住 https://example.com/article/ai-summary 文章要点」类内容；串行（path2）时应包含替身摘要中的要点关键词，如「AI 绘图」「用户翻倍」「本地化小模型」"
       }
     ],
     "toolResults": {
-      "open_page": "页面标题：AI 绘图年度趋势。摘要：①生成式 AI 绘图用户数翻倍；②商用版权规则逐步明确；③本地化小模型兴起。页面内链接：1. https://example.com/article/ai-summary/data",
-      "add_memory": "已记住：AI 绘图文章要点（用户翻倍、版权明确、本地小模型兴起）。"
+      "open_page": "页面标题：AI 绘图年度趋势。摘要：①生成式 AI 绘图用户数翻倍；②商用版权规则逐步明确；③本地化小模型兴起。页面内链接：1. https://example.com/article/ai-summary/data"
     },
-    "notes": "同轮并发（path1，add_memory 记 URL 与「要点」意图）或先读后记（path2，add_memory 融入替身返回的要点）均可接受。url 必须精确等于用户给出的地址。"
+    "notes": "同轮并发（path1，add_memory 记 URL 与「要点」意图）或先读后记（path2，add_memory 融入替身返回的要点）均可接受。url 必须精确等于用户给出的地址。 【2026-10-30 修正】原金标含已删除的 add_memory 路径，已剔除；保留其余真实工具意图。"
   },
   {
     "id": "multi-tool-005",
@@ -3083,24 +2355,15 @@
           {
             "tool": "search",
             "round": 1
-          },
-          {
-            "tool": "add_memory",
-            "round": 1
           }
         ],
         [
           {
             "tool": "search",
             "round": 1
-          },
-          {
-            "tool": "add_memory",
-            "round": 2
           }
         ]
-      ],
-      "allowExtraCalls": true
+      ]
     },
     "argumentRules": [
       {
@@ -3108,19 +2371,12 @@
         "field": "query",
         "rule": "semantic",
         "hint": "须含「高铁」与「退票」（手续费）相关词"
-      },
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "须包含「下周四」与「上海出差」相关信息，不得包含表弟电话相关内容"
       }
     ],
     "toolResults": {
-      "search": "搜索结果（替身）：高铁退票手续费按开车前时间梯次收取，48小时以上5%、24-48小时10%、24小时内20%。",
-      "add_memory": "已记住：下周四要去上海出差。"
+      "search": "搜索结果（替身）：高铁退票手续费按开车前时间梯次收取，48小时以上5%、24-48小时10%、24小时内20%。"
     },
-    "notes": "第三件事（记表弟电话）用户未提供号码本身，信息缺失不可执行：模型追问或忽略均可，但不得为它发起任何工具调用（尤其禁止带空/编造号码的 add_memory）。金标恰好两工具：search（高铁退票）+ add_memory（下周四上海出差），并发或拆两轮均可。 【金标修订 2026-10-13 v2】allowExtraCalls=true：金标工具按序被覆盖即通过，多余调用（get_time/重复 search/拆多次记忆）与轮次先后不判错；漏调与调错工具仍判错。"
+    "notes": "第三件事（记表弟电话）用户未提供号码本身，信息缺失不可执行：模型追问或忽略均可，但不得为它发起任何工具调用（尤其禁止带空/编造号码的 add_memory）。金标恰好两工具：search（高铁退票）+ add_memory（下周四上海出差），并发或拆两轮均可。 【金标修订 2026-10-13 v2】allowExtraCalls=true：金标工具按序被覆盖即通过，多余调用（get_time/重复 search/拆多次记忆）与轮次先后不判错；漏调与调错工具仍判错。 【2026-10-30 修正】原金标含已删除的 add_memory 路径，已剔除；保留其余真实工具意图。"
   },
   {
     "id": "multi-tool-006",
@@ -3774,14 +3030,7 @@
         ]
       ]
     },
-    "argumentRules": [
-      {
-        "tool": "recall_memory",
-        "field": "keywords",
-        "rule": "type",
-        "hint": "字符串数组 1~5 个元素"
-      }
-    ],
+    "argumentRules": [],
     "toolResults": {
       "recall_memory": "未找到相关记忆记录。"
     },
@@ -3851,43 +3100,12 @@
     },
     "historySeed": [],
     "expected": {
-      "shouldCallTools": true,
-      "paths": [
-        [
-          {
-            "tool": "add_memory",
-            "round": 1
-          }
-        ]
-      ]
+      "shouldCallTools": false,
+      "paths": []
     },
-    "argumentRules": [
-      {
-        "tool": "add_memory",
-        "field": "content",
-        "rule": "semantic",
-        "hint": "须包含「怕辣」与「免辣/备注免辣」相关信息"
-      },
-      {
-        "tool": "add_memory",
-        "field": "openid",
-        "rule": "forbidden"
-      },
-      {
-        "tool": "add_memory",
-        "field": "user_id",
-        "rule": "forbidden"
-      },
-      {
-        "tool": "add_memory",
-        "field": "name",
-        "rule": "forbidden"
-      }
-    ],
-    "toolResults": {
-      "add_memory": "已记住：用户怕辣，点外卖需备注免辣。"
-    },
-    "notes": "add_memory 的 schema 只有 content 一个字段；openid/user_id/name 均为幻觉身份参数，出现即判错。单轮一次调用，多余工具调用亦判错。"
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "add_memory 的 schema 只有 content 一个字段；openid/user_id/name 均为幻觉身份参数，出现即判错。单轮一次调用，多余工具调用亦判错。 【2026-10-30 改写】原金标含已删除的 add_memory（[['add_memory']]）；长期记忆工具已退役（M4 前无存储工具），正确行为=不调用任何工具、口头回应（考察不幻觉调用）。"
   },
   {
     "id": "hidden-param-003",

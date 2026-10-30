@@ -15,7 +15,7 @@ import type { MessageContext } from "../types.js";
 import type { ChatMessage } from "./types.js";
 import { config } from "../config.js";
 import { tenantKey } from "../session/key.js";
-import { appendEvent, chatRowsAfterReset, lastChatAt, db, type EventRow } from "./memory/events.js";
+import { appendEvent, chatRowsAll, db, type EventRow } from "./memory/events.js";
 import { renderAttachments } from "./memory/images.js";
 import { logger } from "../services/logger.js";
 
@@ -61,21 +61,38 @@ export interface Projection {
 // 形态 B 装配：chat 行流 → [批(user 消息), 裸 assistant, 批, …]。
 // 规则（§1.2 终版）：批 = 两个 bot 回复之间的 user 行段；连续 chat_bot 序列
 // 整体作一个隔断；process 行不投影（v7）；排除当前消息行（u_now 由 ctx 构造）。
+// 压缩（v10）：条数截断（保留最近 CONTEXT_MAX_MESSAGES 行）+ 时间窗
+//（SESSION_WINDOW_HOURS，超窗行离开投影）——纯投影行为，不写任何标记行。
 export async function projectWindow(ctx: MessageContext): Promise<Projection> {
   const key = tenantKey(ctx.event);
 
-  // 步骤 1 取数（最新 reset 之后的 chat 行）+ 步骤 2 排除当前消息行。
-  const { rows } = chatRowsAfterReset(key);
+  // 步骤 1 取数（chat 行，v10 后不再按 reset 定位）+ 步骤 2 排除当前消息行。
+  const rows = chatRowsAll(key);
   const candidates = rows.filter(
     (r) => !(r.kind === "chat_user" && r.qqMsgId === ctx.event.msgId),
   );
+
+  // 步骤 5a 时间窗（v10 规则②）：created_at 距装配时刻超过 N 小时的行离开
+  // 投影。按行级时间戳过滤（行有序，等价于找最老的合规行之后的全部）。
+  // 设 0 关闭。时间维度上旧消息整块滑出，窗口与"最近的会话"对齐。
+  const windowMs = config.sessionWindowHours * 3600_000;
+  const withinWindow =
+    windowMs <= 0
+      ? candidates
+      : candidates.filter((r) => Date.now() - r.createdAt <= windowMs);
+
+  // 步骤 5b 条数截断（v10 规则①）：候选行数超上限时只保留最近 N 行
+  //（尾部对齐——最新上下文优先，旧行整块丢弃）。
+  const maxMessages = config.contextMaxMessages;
+  const kept =
+    withinWindow.length > maxMessages ? withinWindow.slice(-maxMessages) : withinWindow;
 
   // 步骤 3+4：user 行渲染（speaker/content 字段 + 图片段懒展开）。
   // 同一行恒渲染同一字符串（描述写后不重写——缓存红线）。
   const enableVision = config.visionApiKey !== "";
   const rendered = new Map<number, string>();
   await Promise.all(
-    candidates.map(async (row) => {
+    kept.map(async (row) => {
       if (row.kind !== "chat_user") return; // chat_bot 行直接透出裸 assistant，无需预渲染
       const imagePart =
         row.attachmentIds !== null && row.attachmentIds.length > 0
@@ -95,7 +112,7 @@ export async function projectWindow(ctx: MessageContext): Promise<Projection> {
       batch = [];
     }
   };
-  for (const row of candidates) {
+  for (const row of kept) {
     if (row.kind === "chat_bot") {
       flushBatch();
       messages.push({ role: "assistant", content: row.content ?? "" });
@@ -109,25 +126,16 @@ export async function projectWindow(ctx: MessageContext): Promise<Projection> {
   // buildCurrentUserMessage；blob 单行格式与批内行同构，形态统一）。
   flushBatch();
 
-  // 步骤 5：token 估算与预算闸门（reset 判定，一期压缩形态 = 全量清空）。
+  // token 估算保留为观测口径（v10：不再做闸门；二期用 usage 实测校准系数）。
   const estimated = messages.reduce((sum, m) => sum + estimateTokens(m.content ?? ""), 0);
-  if (estimated > config.contextTokenBudget || messages.length > config.contextMaxMessages) {
-    appendEvent({ key, kind: "reset", role: "system", content: null, origin: "budget" });
-    logger.info("agent", `投影超预算（${estimated} tokens / ${messages.length} 条），已追加 reset 清空窗口`);
-    return { messages: [], estimatedTokens: 0, chatCount: 0 };
+  if (candidates.length !== kept.length) {
+    logger.info(
+      "agent",
+      `L1 压缩生效：候选 ${candidates.length} 行 → 保留 ${kept.length} 行（条数上限 ${maxMessages}，时间窗 ${config.sessionWindowHours}h）`,
+    );
   }
 
-  // 静默分段（SESSION_IDLE_RESET_HOURS，一期默认 0 = 关闭）：距上一条 chat 行
-  // 超过 N 小时，本轮装配后追加 reset 分段（下轮从新断点开始）。
-  if (config.sessionIdleResetHours > 0) {
-    const last = lastChatAt(key);
-    if (last !== null && Date.now() - last > config.sessionIdleResetHours * 3600_000) {
-      appendEvent({ key, kind: "reset", role: "system", content: null, origin: "idle" });
-      logger.info("agent", `会话静默超过 ${config.sessionIdleResetHours}h，已追加 reset 分段`);
-    }
-  }
-
-  return { messages, estimatedTokens: estimated, chatCount: candidates.length };
+  return { messages, estimatedTokens: estimated, chatCount: kept.length };
 }
 
 // ---------- 当前消息（u_now）构造 ----------

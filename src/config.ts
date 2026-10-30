@@ -174,19 +174,18 @@ export const config = {
   browseTotalBudgetMs: optionalEnvNumber("BROWSE_TOTAL_BUDGET_MS", 60000),
   browseMaxContentTokens: optionalEnvNumber("BROWSE_MAX_CONTENT_TOKENS", 3000),
   browseMaxLinks: optionalEnvNumber("BROWSE_MAX_LINKS", 30),
-  // 记忆与上下文重构（docs/features/2026-10-28-记忆与上下文重构总方案.md 模块二 §1.4）：
-  //   contextTokenBudget    —— L1 投影的 token 预算，溢出即追加 reset 行清空窗口
-  //                           （一期压缩形态；摘要式压缩二期）。
-  //   contextMaxMessages    —— 投影条数安全阀（防超长消息绕过字符估算），同样触发 reset。
+  // 记忆与上下文重构（docs/features/2026-10-28-记忆与上下文重构总方案.md
+  // 模块二 §1.4 v10 终版——压缩是纯投影行为，两条规则）：
+  //   contextMaxMessages   —— L1 条数截断上限：候选 chat 行超过则只保留最近
+  //                           N 行（规则①；未来可换 token 驱动判定）。
+  //   sessionWindowHours   —— L1 时间窗：chat 行 created_at 距装配时刻超过
+  //                           该小时数的行离开投影（规则②；设 0 关闭）。
   //   recallDepthN          —— recall_memory 回看的 chat 行深度（兼 images prune 锚点）。
   //   recallSummaryMinChars —— recall 文本包小于该字符数时原文直返、不过摘要 LLM。
-  //   sessionIdleResetHours —— 静默分段：距上一条 chat 行超过该小时数，装配前追加
-  //                           reset。一期默认 0（关闭，二期开启调参）。
-  contextTokenBudget: optionalEnvNumber("CONTEXT_TOKEN_BUDGET", 24576),
   contextMaxMessages: optionalEnvNumber("CONTEXT_MAX_MESSAGES", 200),
+  sessionWindowHours: optionalEnvNumber("SESSION_WINDOW_HOURS", 2),
   recallDepthN: optionalEnvNumber("RECALL_DEPTH_N", 300),
   recallSummaryMinChars: optionalEnvNumber("RECALL_SUMMARY_MIN_CHARS", 800),
-  sessionIdleResetHours: optionalEnvNumber("SESSION_IDLE_RESET_HOURS", 0),
   // MCP 服务器接入（mcp.json，可选，文件不存在则 MCP 层整体不启用）：
   //   mcpServerConfigs —— 逐服务器 { name, url, apiKey, expose }。apiKey 非空时以
   //                       Authorization: Bearer 头随每个请求发送（公网服务器的鉴权）；

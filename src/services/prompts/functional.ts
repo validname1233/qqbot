@@ -1,5 +1,10 @@
 // services/prompts/functional.ts —— 功能模块提示词，这部分不可自定义（各场景的系统行为规则）。
 // 和人格提示词（可自定义）分离，运行时在 builder.ts 里按需组装。
+// 2026-10-29 提示词 v2：人格缓存与存取自 builder.ts 迁入本文件；主 Agent 的
+// system 拼装改为本文件的专用函数 getAgentSystemPrompt（见文件尾部）。
+
+import type { BotEvent } from "../../events/registry.js";
+import { tenantKey } from "../../session/key.js";
 
 // 默认人格（汐汐的角色设定），可被数据库里的自定义人格覆盖。
 // 这里只写"她是谁、怎么说话"——输出格式限制在各场景的功能规则里，跟人格分离，
@@ -85,17 +90,52 @@ const M2_TOOLS = `你可以调用系统提供的工具来完成任务（名称�
 export const AGENT_UNIFIED_HEAD = `${M1_CORE}\n\n${M2_TOOLS}`;
 export const AGENT_UNIFIED_TAIL = OUTPUT_FORMAT_RULE;
 
+// ---------- 人格存取（2026-10-29 自 builder.ts 迁入） ----------
+
+// 模块内缓存：启动时从数据库加载所有自定义人格（store.ts），运行时直接从
+// 这里读（不再每次查库）。
+const personalityCache = new Map<string, string>();
+
+// 按事件取该租户的人格：自定义（/set_personality 存库后由 store 刷进缓存）
+// 优先，DEFAULT_PERSONALITY 兜底。
+export function getPersonality(event: BotEvent): string {
+  const key = tenantKey(event);
+  return personalityCache.get(key) ?? DEFAULT_PERSONALITY;
+}
+
+// 缓存写入：store.ts 在更新数据库后调用此函数同步刷新缓存
+export function setPersonalityCache(key: string, personality: string): void {
+  personalityCache.set(key, personality);
+}
+
+// 缓存清除：暂时用不上，预留接口（如果以后要支持"恢复默认人格"可以调这个）
+export function clearPersonalityCache(key: string): void {
+  personalityCache.delete(key);
+}
+
+// 启动时批量加载：store.ts 的 initializePersonalities() 会遍历数据库全部记录，
+// 逐条调 setPersonalityCache 把自定义人格加载进内存
+export function getAllCachedKeys(): string[] {
+  return Array.from(personalityCache.keys());
+}
+
+// ---------- 主 Agent 的 system prompt（专用入口） ----------
+
+// 主 Agent 链路（loop.ts 的 llmCall/forcedFinalize 共用）的 system 拼装：
+// [M1 身份与输入格式 + M2 工具判断] + 人格（按租户）+ [M3 输出格式]。
+// 提示词 v2 决议：Agent 主链路不走 getSystemPrompt 的场景表——专用函数直拼，
+// HEAD/TAIL 在本文件，人格也在本文件，单一文件闭环。
+export function getAgentSystemPrompt(event: BotEvent): string {
+  return `${AGENT_UNIFIED_HEAD}\n\n${getPersonality(event)}\n\n${AGENT_UNIFIED_TAIL}`;
+}
+
 // 各场景的功能规则，不可自定义（系统级约束，改坏了会导致工具调用失败或误判）
 export const FUNCTIONAL_PROMPTS = {
   // 日常对话场景（reminder/scheduler 等 service 直调仍在用；Agent 主链路已
-  // 由 agent_unified 取代，v9）。消费方为单条消息直调、不读 blob 历史，
-  // 说话人说明（原 SPEAKER_NOTE）已随提示词 v2 并入 M1，此处不再引用。
+  // 由 getAgentSystemPrompt 取代，不走本场景表）。消费方为单条消息直调、
+  // 不读 blob 历史，说话人说明（原 SPEAKER_NOTE）已随提示词 v2 并入 M1，
+  // 此处不再引用。
   daily: `${OUTPUT_FORMAT_RULE}\n${IMAGE_NOTE}`,
-
-  // Agent 统一场景（v9 直通 + 提示词 v2 模块化）：llmCall 唯一场景。
-  // 本键的值只是 HEAD（M1+M2）——最终 system 由 builder 拼装
-  // HEAD + 人格 + TAIL（人格中置），不要直接把本键当完整 system 用。
-  agent_unified: AGENT_UNIFIED_HEAD,
 
   // （agent_finalize 场景已退役，2026-10-29 提示词 v2：降级指令收口为
   //  LOOP_EXHAUSTED_SIGNAL 导出常量，loop.ts 直接 import 注入 user 消息——

@@ -4,13 +4,21 @@
 
 import { config } from "../config.js";
 import type { ChatMessage, ToolSchema } from "../agent/types.js";
-import { logger, setDayRollCallback } from "./logger.js";
+import { logger } from "./logger.js";
 
 // DeepSeek 官方 OpenAI 兼容接口。注意路径不带 /v1（那是给 OpenAI SDK 用的兼容别名）。
 const API_URL = "https://api.deepseek.com/chat/completions";
 
 interface ChatCompletionResponse {
   choices?: Array<{ message?: ChatMessage }>;
+  // DeepSeek 特有字段：缓存命中/未命中的输入 token 数（hit+miss=prompt_tokens）。
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    prompt_cache_hit_tokens?: number;
+    prompt_cache_miss_tokens?: number;
+  };
 }
 
 // 默认系统提示词已迁移到 services/prompts/functional.ts 的 DEFAULT_PERSONALITY，
@@ -56,14 +64,11 @@ export async function callModel(
     "model",
     `[${label}] 调用 model=${model} tools=${tools?.length ?? 0} messages=${messages.length}`,
   );
-  logger.detail(
-    "model",
-    `[${label}] 请求明细 model=${model} enableThinking=${enableThinking} userMessage=${truncateContent(lastUserMessage?.content ?? null)}`,
+  // 全量请求输入（2026-10-30 决议）：直连控制台打印，不进文件日志——多轮 Agent
+  // 的输入高度重复（system+历史每轮都发），持久化太冗余；控制台看现场用。
+  console.log(
+    `[${consoleStamp()}] [model] [${label}] 请求输入全量（${messages.length} 条）：\n${renderMessagesPlain(messages)}`,
   );
-  // detail 流水（只进文件日志）：完整输入 messages，提示词按内容指纹去重——
-  // 人设/系统提示词/旧历史在当天文件里只出现一次全文，之后是单行引用
-  //（方案 §2.3：全量落盘会使同一段提示词一天写几百遍，没法读也没法存）。
-  logger.detail("model", `[${label}] 请求输入（${messages.length} 条，指纹去重）：\n${renderMessagesWithFingerprint(messages)}`);
 
   const response = await fetch(API_URL, {
     method: "POST",
@@ -100,6 +105,18 @@ export async function callModel(
     throw new Error("AI 接口返回里没有 message 字段");
   }
 
+  // usage（2026-10-30 决议）：DeepSeek 返回的 token 用量四元组，trace 级落
+  // 日志（控制台+文件）——缓存命中率观测与二期估算校准的数据源。
+  const usage = data.usage;
+  if (usage !== undefined) {
+    const hit = usage.prompt_cache_hit_tokens ?? 0;
+    const miss = usage.prompt_cache_miss_tokens ?? 0;
+    logger.node(
+      "model",
+      `[${label}] usage: prompt=${usage.prompt_tokens ?? hit + miss} (hit=${hit} miss=${miss}) completion=${usage.completion_tokens ?? 0}`,
+    );
+  }
+
   // 轨迹行（控制台）：谁发起、耗时、产出了什么（工具名或字数）——不带正文。
   const outcome =
     message.tool_calls !== undefined && message.tool_calls.length > 0
@@ -107,17 +124,8 @@ export async function callModel(
       : `content ${(message.content ?? "").length} 字`;
   logger.node("model", `[${label}] 返回 (+${elapsed}ms) → ${outcome}`);
 
-  // tool_calls 只打印名字+参数（不打 id，排查时用不上，反而占地方）。
-  const toolCallsSummary =
-    message.tool_calls === undefined
-      ? "无"
-      : message.tool_calls.map((call) => `${call.function.name}(${call.function.arguments})`).join(", ");
-  logger.detail(
-    "model",
-    `[${label}] 返回明细 (+${elapsed}ms) content=${truncateContent(message.content)} tool_calls=${toolCallsSummary}`,
-  );
-  // detail 流水：content 与 tool_calls 全文（不截断）——tool_calls 的 JSON 连 id
-  // 一起存（回放/比对时 id 与参数同属协议内容，截断版才有"占地方"的取舍）。
+  // 返回全文（2026-10-30 决议）：文件日志保留的唯二模型内容之一——解析出
+  // 什么打什么（content 全文 + tool_calls 完整 JSON，含 id），不截断不去重。
   const detailParts = [`[${label}] 返回输出 (+${elapsed}ms) content 全文：`];
   detailParts.push(message.content ?? "（null）");
   if (message.tool_calls !== undefined) {
@@ -128,51 +136,35 @@ export async function callModel(
   return message;
 }
 
-// ---------- 输入指纹去重（方案 §2.3） ----------
-// 指纹表：进程内 Map（sha → true）。同指纹的 message 内容在文件日志里只写一次
-// 全文，之后单行引用。跨天时由 logger 的按天滚动连带重置（见 resetDetailFingerprints）——
-// 新文件从零积累，引用永远指向当天文件里存在的全文。
-const seenFingerprints = new Set<string>();
-
-// 跨天滚动时 logger 回调：清空指纹表，让新文件从零积累全文（引用永远指向
-// 当天文件里存在的 sha）。注册制避免 logger↔model 循环 import。
-setDayRollCallback(() => {
-  seenFingerprints.clear();
-});
-
-// 重置指纹表（测试用）：logger 检测到跨天滚动时经 setDayRollCallback 间接调用。
-export function resetDetailFingerprints(): void {
-  seenFingerprints.clear();
-}
-
-// 简单 FNV-1a 32 位 hash：指纹用途是"同内容识别"而非密码学安全，冲突率
-// 2^32 分之一在日志场景可忽略；比 crypto.sha1 快且零依赖。
-function fingerprint(text: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
-}
-
-// 把一次请求的 messages 渲染成"全文 or 引用"的逐条清单。导出供测试验证
-// 去重语义（生产调用点只有 callModel 一处）。
+// ---------- 消息渲染（2026-10-30 决议：指纹去重置空） ----------
+// 旧机制（方案 §2.3 的 sha 指纹去重）已停用：全量输入改控制台直打（不落盘，
+// 去重失去意义），文件日志只保留模型返回全文。renderMessagesWithFingerprint
+// 保留导出与签名（历史测试兼容），行为改为原样全量输出（无去重、无指纹表）。
+// 跨天滚动回调随之空置，注销注册。
 export function renderMessagesWithFingerprint(messages: ChatMessage[]): string {
+  return renderMessagesPlain(messages);
+}
+
+// 全量渲染：逐条 [msg#i role] + content + 协议字段（tool_calls/tool_call_id）。
+// 控制台直打用（2026-09-20 方案 §2.3 的去重版被 2026-10-30 决议取代）。
+export function renderMessagesPlain(messages: ChatMessage[]): string {
   return messages
     .map((msg, i) => {
       const content = msg.content ?? "（null）";
       const extra =
         msg.tool_calls !== undefined ? ` tool_calls=${JSON.stringify(msg.tool_calls)}` : "";
       const extraTail = msg.tool_call_id !== undefined ? ` tool_call_id=${msg.tool_call_id}` : "";
-      const fp = fingerprint(`${msg.role}:${content}`);
-      if (seenFingerprints.has(fp)) {
-        return `[msg#${i} ${msg.role} sha=${fp}]（同前，略）${extra}${extraTail}`;
-      }
-      seenFingerprints.add(fp);
-      return `[msg#${i} ${msg.role} sha=${fp}]\n${content}${extra}${extraTail}`;
+      return `[msg#${i} ${msg.role}]\n${content}${extra}${extraTail}`;
     })
     .join("\n");
+}
+
+// 控制台时间戳（与 logger 控制台格式对齐的本地实现——不走 logger 是因为
+// 全量输入是"仅控制台"内容，logger 没有这个通道，走 detail 会落盘）。
+function consoleStamp(): string {
+  const d = new Date();
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 // AbortError 识别：/stop 拉闸时 fetch 抛的就是它。调用方的 catch 用这个判断

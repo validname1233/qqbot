@@ -6,11 +6,13 @@
 //   kind=chat_bot   —— bot 实际发出的每一条回复（qq/messages.ts 出站收口写入）
 //   kind=process    —— agent 轮内的中间产物（judge 输出/工具结果，节点就地写入；
 //                      v7 决议：不跨轮投影，仅库存档 + 轮内使用）
-//   kind=reset      —— 窗口清空标记（装配层预算溢出时写入；v5 决议：一期压缩形态）
-//   kind=summary    —— 预留（摘要槽，二期实现，一期不写入）
+//   kind=reset      —— 历史遗留（v10：reset 语义废除，不再写入；投影不再读取；
+//                      kind 保留仅为表结构兼容）
+//   kind=summary    —— 已取消（v10：摘要式压缩取消，永不写入）
 //
-// 窗口 = 查询（§1.5 终版原则）：不存在窗口管理器，L1 投影每次装配现算
-//（最新 reset 之后的 chat 行），所有窗口操作收敛为写标记行。
+// 窗口 = 查询（§1.5 终版原则 + v10）：不存在窗口管理器，L1 投影每次装配现算
+//（全部 chat 行 + 装配层纯过滤——条数截断与时间窗），压缩是视图行为，
+// 不往流里写任何东西。
 //
 // 旧表 short_term_messages 在本模块 init 时 DROP（2026-10-28 决议：测试环境
 // 无兼容负担）。message_images / long_term_memories 与本表同库共存，不受影响。
@@ -154,30 +156,17 @@ export function appendEvent(e: AppendEventInput): number | null {
 
 // ---------- 读取（两种投影 + 支撑查询） ----------
 
-// L1 取数：最新 reset 行之后的 chat 行（v7：process 不跨轮投影）。
-// afterId=0 表示"无 reset"，从头取。返回正序（旧→新）。
-const chatAfterStmt = db.prepare(`
+// L1 取数：全部 chat 行（v10：不再按 reset 定位——reset 语义已废，压缩
+// 改为装配层的纯投影行为；process 行照旧不取，v7）。正序返回（旧→新）。
+const chatAllStmt = db.prepare(`
   SELECT * FROM conversation_events
-  WHERE key = ? AND id > ? AND kind IN ('chat_user', 'chat_bot')
+  WHERE key = ? AND kind IN ('chat_user', 'chat_bot')
   ORDER BY id ASC
 `);
 
-export function chatRowsAfterReset(key: string): { rows: EventRow[]; afterId: number } {
-  const afterId = latestResetId(key);
-  const raw = chatAfterStmt.all(key, afterId) as unknown as RawRow[];
-  return { rows: raw.map(toRow), afterId };
-}
-
-// 最新 reset 行 id；无 reset 返回 0（"从头的等价物"——id 从 1 起）。
-const latestResetStmt = db.prepare(`
-  SELECT id FROM conversation_events
-  WHERE key = ? AND kind = 'reset'
-  ORDER BY id DESC LIMIT 1
-`);
-
-export function latestResetId(key: string): number {
-  const row = latestResetStmt.get(key) as { id: number } | undefined;
-  return row?.id ?? 0;
+export function chatRowsAll(key: string): EventRow[] {
+  const raw = chatAllStmt.all(key) as unknown as RawRow[];
+  return raw.map(toRow);
 }
 
 // L2 取数：最近 n 条 chat 行（recall_memory 用），正序返回。
@@ -190,18 +179,6 @@ const chatTailStmt = db.prepare(`
 export function chatRows(key: string, n: number): EventRow[] {
   const raw = chatTailStmt.all(key, n) as unknown as RawRow[];
   return raw.reverse().map(toRow);
-}
-
-// 该 key 最近一条 chat 行的 created_at（静默分段检测用）；无 chat 行返回 null。
-const lastChatTimeStmt = db.prepare(`
-  SELECT created_at FROM conversation_events
-  WHERE key = ? AND kind IN ('chat_user', 'chat_bot')
-  ORDER BY id DESC LIMIT 1
-`);
-
-export function lastChatAt(key: string): number | null {
-  const row = lastChatTimeStmt.get(key) as { created_at: number } | undefined;
-  return row?.created_at ?? null;
 }
 
 // 清空某租户全部行（评测脚本隔离清理用）。
