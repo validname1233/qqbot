@@ -22,7 +22,7 @@ import { StateGraph, StateSchema, ReducedValue, START, END } from "@langchain/la
 import { z } from "zod";
 import type { MessageContext } from "../types.js";
 import { projectWindow, buildCurrentUserMessage } from "./assembly.js";
-import { callModel } from "../services/model.js";
+import { callModel, isAbortError } from "../services/model.js";
 import { logger } from "../services/logger.js";
 import { getAgentSystemPrompt, LOOP_EXHAUSTED_SIGNAL } from "../services/prompts/functional.js";
 import { runTool, toolSchemas } from "./registry.js";
@@ -226,6 +226,17 @@ export async function runAgentTurn(
     const reply = result.reply ?? "（Agent 没有返回内容）";
     logger.node("agent", `[/Agent] 完成 → 回复 ${reply.length} 字 (+${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);
     return reply;
+  } catch (err) {
+    // /stop 拉闸时正在等的 fetch 抛 AbortError——这是"用户主动停"的正常信号，
+    // 不是故障：静默返回空串（不发"任务失败"类消息，与 interrupt.ts 宣称的
+    // 语义对齐）。不识别的话它会一路冒泡——自动路由下被 webhook 的 catch
+    // 静默吞掉（留一行误导性的 error 日志），显式 /Agent 下触发"功能坏了"
+    // 兜底文案，两条路径行为不一致。
+    if (isAbortError(err)) {
+      logger.info("agent", "[/Agent] 被 /stop 中断，静默收尾");
+      return "";
+    }
+    throw err;
   } finally {
     unsubscribeProgress();
     endControlledFlow(flowKey, controller);
