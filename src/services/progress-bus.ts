@@ -20,7 +20,11 @@ import { logger } from "./logger.js";
 // 全项目从此只此一份）。
 type Listener = (text: string) => Promise<void>;
 
-const listeners = new Map<string, Listener>();
+// 栈式订阅（2026-10-31，双子 Agent 工具化方案 §2.4）：同 key 允许嵌套订阅
+//（主 Agent 订阅 → 委派的子 Agent 再订阅）。旧单值 Map 在嵌套退订时会把外层
+// 订阅一并删掉——子 Agent finally 之后主 Agent 的进度 emit 静默丢失（工具化
+// 首次出现的 latent bug）。栈语义：subscribe=push、退订=splice 自己、emit=栈顶。
+const listeners = new Map<string, Listener[]>();
 
 // 群/私聊分支的统一适配器：进度消息全部走主动推送（push，不带 msg_id）——
 // 不消耗被动回复额度（群聊每条消息仅 5 次），也不受 5 分钟回复窗口约束
@@ -37,24 +41,32 @@ function makeListener(event: BotEvent): Listener {
   };
 }
 
-// 请求入口调用（runAgentTurn）：建立这次请求的进度订阅，返回退订函数。
-// 重复订阅同 key 时新替旧（防御性——并发闸正常工作时不会走到）。
+// 请求入口调用（runAgentTurn / 深检 / workspace）：建立这次请求的进度订阅，
+// 返回退订函数。嵌套安全：每个订阅是栈上的独立实例，退订只弹自己（按闭包
+// 身份 indexOf+splice）——即使外层先于内层退订（异常顺序）也不误伤。
 export function subscribeProgress(event: BotEvent): () => void {
   const key = tenantKey(event);
-  listeners.set(key, makeListener(event));
+  const listener = makeListener(event);
+  const stack = listeners.get(key) ?? [];
+  stack.push(listener);
+  listeners.set(key, stack);
   return () => {
-    // 只删自己的订阅：退订时若 key 已被新订阅占据，说明有异常并发，不误删
-    if (listeners.get(key) !== undefined) listeners.delete(key);
+    const current = listeners.get(key);
+    if (current === undefined) return;
+    const idx = current.indexOf(listener);
+    if (idx >= 0) current.splice(idx, 1);
+    if (current.length === 0) listeners.delete(key); // 空栈清 key，不泄漏
   };
 }
 
-// 切面埋点调用（registry.ts 的 runTool）：向当前订阅者投递一条进度文案。
-// 同步返回、不 await 送达——事件源（工具执行）永远不为推送耗时买单；
-// listener 的失败在这里兜成 warn（用户关闭"允许主动消息"时静默降级，
-// 进度提示是锦上添花，不能炸掉工具本身）。
+// 切面埋点调用（registry.ts 的 runTool）：向当前订阅者（栈顶 = 最内层活跃
+// 请求，与旧单值语义一致）投递一条进度文案。同步返回、不 await 送达——
+// 事件源（工具执行）永远不为推送耗时买单；listener 的失败在这里兜成 warn
+// （用户关闭"允许主动消息"时静默降级，进度提示是锦上添花，不能炸掉工具本身）。
 export function emitProgress(event: BotEvent, text: string): void {
   const key = tenantKey(event);
-  const listener = listeners.get(key);
+  const stack = listeners.get(key);
+  const listener = stack === undefined ? undefined : stack[stack.length - 1];
   if (listener === undefined) return;
   listener(text).catch((error: unknown) => {
     logger.warn(

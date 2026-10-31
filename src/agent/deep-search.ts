@@ -35,15 +35,16 @@ import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
 import type { ChatMessage, ToolSchema } from "./types.js";
 import { webSearch, formatSearchResults } from "../services/search.js";
-import { callModel } from "../services/model.js";
+import { callModel, isAbortError } from "../services/model.js";
 import { getSystemPrompt } from "../services/prompts/builder.js";
 import { releaseBrowser } from "../services/browse/browser.js";
 import { toolSchemas, runTool } from "./deep-search/registry.js";
 import { loadPage } from "./tools/open-page.js";
 import { searchTool } from "./tools/search.js";
 import { emitProgress, subscribeProgress } from "../services/progress-bus.js";
-import { beginControlledFlow, endControlledFlow } from "../session/interrupt.js";
+import { beginControlledFlow, endControlledFlow, currentFlowSignal } from "../session/interrupt.js";
 import { tenantKey } from "../session/key.js";
+import { appendEvent } from "./memory/events.js";
 import { logger } from "../services/logger.js";
 
 // 深检工具走独立注册表（deep-search/registry.ts），不进 agent/registry.ts 共享注册表
@@ -126,6 +127,31 @@ async function prefetchUrls(
   return { pages, failures };
 }
 
+// ---------- 子 Agent 过程归档（双子 Agent 工具化方案 §2.3，2026-10-31） ----------
+// 深检的中间过程落 conversation_events 的 process 行（origin="deep-search"），
+// 与主链路 llmCall/toolsNode 的写入形态同构（v2 就地写入）。永不投影（v7），
+// 仅排查回放用；裸调用与委派两条路径都经同一图核心，天然统一。
+// 落库失败不炸图（档案缺行 < 调研中断）——与主链路的写入容错语义一致。
+
+function archiveProcess(
+  event: DeepSearchStateT["ctx"]["event"],
+  row: { role: "assistant" | "tool"; content: string | null; toolCalls?: ChatMessage["tool_calls"]; toolCallId?: string },
+): void {
+  try {
+    appendEvent({
+      key: tenantKey(event),
+      kind: "process",
+      role: row.role,
+      content: row.content,
+      toolCalls: row.toolCalls,
+      toolCallId: row.toolCallId,
+      origin: "deep-search",
+    });
+  } catch (err) {
+    logger.warn("agent", `深检过程归档失败（忽略）：${err instanceof Error ? err.message : err}`);
+  }
+}
+
 async function preflightNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   const deadline = Date.now() + config.browseTotalBudgetMs;
   const question = state.question.trim();
@@ -202,6 +228,12 @@ async function searchNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
     }
     throw error;
   }
+  // 过程归档：检索词改写调用的模型输出（assistant 含 tool_calls）。
+  archiveProcess(state.ctx.event, {
+    role: "assistant",
+    content: response.content,
+    toolCalls: response.tool_calls,
+  });
 
   // 第二步：从 tool_calls 提取检索词（模型可能并行给多个；不给就退回原问题）。
   const queries: string[] = [];
@@ -240,6 +272,9 @@ async function searchNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
     ? `\n\n以下是起点搜索得到的材料（标题+摘要+链接）：\n${blocks.join("\n\n")}`
     : "\n\n（起点搜索没有结果。可以在浏览阶段用 search 工具换个检索词重试，或用 open_page 打开搜索引擎结果页如 https://www.bing.com/search?q=问题关键词 ）";
 
+  // 过程归档：起点搜索结果全文（tool 侧——检索词改写归档在上面的 assistant 行）。
+  archiveProcess(state.ctx.event, { role: "tool", content: searchPart });
+
   return { startMaterial: `${state.startMaterial}${searchPart}` };
 }
 
@@ -270,6 +305,8 @@ async function planNode(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   );
 
   const planText = plan.content ?? "（计划生成为空，直接开始浏览）";
+  // 过程归档：调研计划（assistant 侧，无 tool_calls）。
+  archiveProcess(state.ctx.event, { role: "assistant", content: planText });
   // 轨迹行（控制台）：计划生成一行结论；链全文进 detail（文件可完整复盘模型
   // 的思考轨迹，控制台不刷屏——阶段二分流）。
   logger.node("agent", `planNode 计划生成（${planText.length} 字）`);
@@ -335,6 +372,13 @@ async function browseLlm(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   }
   logger.detail("agent", `思维链[${stepNo}]: ${stepNote}`);
 
+  // 过程归档：本轮浏览决策的模型输出（assistant 含 tool_calls）。
+  archiveProcess(state.ctx.event, {
+    role: "assistant",
+    content: response.content,
+    toolCalls: response.tool_calls,
+  });
+
   return {
     messages: [{ role: "assistant", content: response.content, tool_calls: response.tool_calls }],
     chain: [stepNote],
@@ -382,6 +426,8 @@ async function browseTools(state: DeepSearchStateT): Promise<DeepSearchUpdateT> 
         args = {};
       }
       const result = await runTool(call.function.name, args, state.ctx);
+      // 过程归档：每个工具结果全文（tool 侧，带 toolCallId 配对）。
+      archiveProcess(state.ctx.event, { role: "tool", content: result, toolCallId: call.id });
       return { role: "tool", content: result, tool_call_id: call.id };
     }),
   );
@@ -423,6 +469,10 @@ async function synthesize(state: DeepSearchStateT): Promise<DeepSearchUpdateT> {
   );
 
   const report = final.content ?? "（深度检索没有生成报告）";
+  // 过程归档：报告生成调用（裸调用路径的成品由出站收口另记 chat_bot；委派
+  // 路径的成品以 tool result 回流主 Agent——此处 process 行是两条路径共有的
+  // "生成调用"档案）。
+  archiveProcess(state.ctx.event, { role: "assistant", content: report });
   // 轨迹行（控制台）：收尾一行结论（链规模 + 报告字数）。链断没断一眼可见。
   logger.node(
     "agent",
@@ -486,18 +536,29 @@ const deepSearchGraph = new StateGraph(DeepSearchState)
 export async function runDeepSearch(
   question: string,
   ctx: MessageContext,
+  opts: { ownFlow?: boolean } = {},
 ): Promise<string> {
-  // /stop 中断挂载（拒绝并发语义，与 runAgentTurn 同款）：登记失败 = 该会话已有长流程。
+  // /stop 中断挂载（拒绝并发语义，与 runAgentTurn 同款）。ownFlow 二选一
+  //（双子 Agent 工具化方案 §2.2，照抄 workspace run-task 模式）：
+  //   独立模式（默认，/深度检索 命令）：自己登记——登记失败 = 该会话已有长流程。
+  //   委派模式（ownFlow:false，deep_search 工具调用）：不登记（父流程已持闸，
+  //     同 key 嵌套登记返回 null 会把自己拒了），经 currentFlowSignal 反查父
+  //     signal 挂进图——/stop 拉主流程闸即传导。
   const flowKey = tenantKey(ctx.event);
-  const controller = beginControlledFlow(flowKey);
-  if (controller === null) {
-    return "上一个任务还在跑哦～先发 /stop 停掉它，再重新发起吧。";
+  let controller: AbortController | null = null;
+  if (opts.ownFlow !== false) {
+    controller = beginControlledFlow(flowKey);
+    if (controller === null) {
+      return "上一个任务还在跑哦～先发 /stop 停掉它，再重新发起吧。";
+    }
   }
+  const signal = controller?.signal ?? currentFlowSignal(flowKey) ?? null;
 
-  // 进度推送订阅（progress-bus，二期接入）：planNode 的"正在规划路线"和浏览循环
-  // 里声明了 progressNote 的工具（search/open_page/interact_page，经 runTool 切面）
-  // 的进度，都送到发起这次深检的会话。本地入口（runDeepSearchLocally）不挂订阅，
-  // emit 到无订阅者是 no-op——测试输出不被推送污染。
+  // 进度推送订阅（progress-bus）：planNode 的"正在规划路线"和浏览循环里声明了
+  // progressNote 的工具（search/open_page/interact_page，经 runTool 切面）的进度，
+  // 都送到发起这次深检的会话。委派模式下这里是嵌套订阅（栈式，主 Agent 的订阅
+  // 在下层）——深检退订后主 Agent 后续轮次的进度不丢。本地入口
+  //（runDeepSearchLocally）不挂订阅，emit 到无订阅者是 no-op。
   const unsubscribeProgress = subscribeProgress(ctx.event);
   const startedAt = Date.now();
   logger.node("agent", `[/深度检索] 收到（${question.slice(0, 40)}${question.length > 40 ? "…" : ""}）`);
@@ -511,11 +572,11 @@ export async function runDeepSearch(
       question,
       ctx,
       skipMemory: false,
-      interruptSignal: controller.signal,
+      interruptSignal: signal,
     });
 
     // 被 /stop 中断：静默返回（与主 Agent 的中断语义一致），报告未产出。
-    if (controller.signal.aborted) {
+    if (signal?.aborted) {
       return "";
     }
 
@@ -523,9 +584,17 @@ export async function runDeepSearch(
     logger.node("agent", `[/深度检索] 完成 → 报告 ${report.length} 字 (+${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);
 
     return report;
+  } catch (err) {
+    // AbortError 顶层识别（与 runAgentTurn 同款）：/stop 拉闸时正在等的模型调用
+    // 抛 AbortError——"用户主动停"不是故障，静默返回空串，不发"任务失败"。
+    if (isAbortError(err)) {
+      logger.info("agent", "[/深度检索] 被 /stop 中断，静默收尾");
+      return "";
+    }
+    throw err;
   } finally {
     unsubscribeProgress();
-    endControlledFlow(flowKey, controller);
+    if (controller !== null) endControlledFlow(flowKey, controller);
     // A 档生命周期落点：无论成败，图跑完就关浏览器
     await releaseBrowser();
   }

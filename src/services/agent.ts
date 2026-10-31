@@ -15,6 +15,7 @@ import { agentOpenPageTool } from "../agent/tools/open-page.js";
 import { getTimeTool } from "../agent/tools/get-time.js";
 import { recallMemoryTool } from "../agent/tools/recall-memory.js";
 import { workspaceTaskTool } from "../agent/tools/workspace-task.js";
+import { deepSearchTaskTool } from "../agent/tools/deep-search-task.js";
 import { config } from "../config.js";
 
 registerTool(setReminderTool);
@@ -30,6 +31,9 @@ registerTool(recallMemoryTool);
 if (config.workspaceEnabled) {
   registerTool(workspaceTaskTool);
 }
+// deep_search：深度检索委派入口（双子 Agent 工具化方案 §2.1）。无外部依赖
+// 恒注册——显式 /深度检索 命令与它双入口共用同一个图核心。
+registerTool(deepSearchTaskTool);
 
 export const agentService: CommandService = {
   name: "Agent",

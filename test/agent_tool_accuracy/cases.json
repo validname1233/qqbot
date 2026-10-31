@@ -3189,5 +3189,257 @@
       "set_reminder": "提醒已设置：1800 秒后提醒您去楼下取快递。"
     },
     "notes": "「半小时后」为时长而非时刻，seconds=1800 直译，无需 get_time。id/user 从未出现在 schema 中，生成即幻觉参数判错。单轮一次调用。"
+  },
+  {
+    "id": "deep-search-001",
+    "category": "deep_search",
+    "description": "明确要求深度调研",
+    "input": "帮我深度调研一下今年新能源汽车的市场格局",
+    "context": {
+      "scene": "c2c",
+      "authorName": "测试用户"
+    },
+    "historySeed": [],
+    "expected": {
+      "shouldCallTools": true,
+      "paths": [
+        [
+          {
+            "tool": "get_time",
+            "round": 1
+          },
+          {
+            "tool": "deep_search",
+            "round": 2
+          }
+        ],
+        [
+          {
+            "tool": "get_time",
+            "round": 1
+          },
+          {
+            "tool": "deep_search",
+            "round": 1
+          }
+        ],
+        [
+          {
+            "tool": "deep_search",
+            "round": 1
+          }
+        ]
+      ]
+    },
+    "argumentRules": [
+      {
+        "tool": "deep_search",
+        "field": "question",
+        "rule": "semantic",
+        "hint": "应包含调研主题的核心实体，自包含（含对话背景）"
+      }
+    ],
+    "toolResults": {
+      "deep_search": "[Purpose]调研报告（评测替身）：……约1500字报告正文……"
+    },
+    "notes": "金标：调研意图 → deep_search 委派。 【2026-10-31 修正】补前置工具备选路径——get_time（相对时间）/recall_memory（背景回查）先行是 M2.2/[Brief] 的正确行为，首测 3/3 采样一致复现。 【2026-10-31 二次修正】前置工具跨轮串行（模型取到日期/背景后再构造 question）为主路径，同轮并发与直发为备选。"
+  },
+  {
+    "id": "deep-search-002",
+    "category": "deep_search",
+    "description": "对比类调研意图",
+    "input": "我想全面对比一下React和Vue在2026年的生态现状",
+    "context": {
+      "scene": "c2c",
+      "authorName": "测试用户"
+    },
+    "historySeed": [],
+    "expected": {
+      "shouldCallTools": true,
+      "paths": [
+        [
+          {
+            "tool": "deep_search",
+            "round": 1
+          }
+        ],
+        [
+          {
+            "tool": "get_time",
+            "round": 1
+          },
+          {
+            "tool": "deep_search",
+            "round": 2
+          }
+        ]
+      ]
+    },
+    "argumentRules": [
+      {
+        "tool": "deep_search",
+        "field": "question",
+        "rule": "semantic",
+        "hint": "应包含调研主题的核心实体，自包含（含对话背景）"
+      }
+    ],
+    "toolResults": {
+      "deep_search": "[Purpose]调研报告（评测替身）：……约1500字报告正文……"
+    },
+    "notes": "金标：调研意图 → deep_search 委派。 【2026-10-31 二次修正】前置工具跨轮串行（模型取到日期/背景后再构造 question）为主路径，同轮并发与直发为备选。"
+  },
+  {
+    "id": "deep-search-003",
+    "category": "deep_search",
+    "description": "简单事实不该委派（用search）",
+    "input": "今天A股上证指数收盘多少点",
+    "context": {
+      "scene": "c2c",
+      "authorName": "测试用户"
+    },
+    "historySeed": [],
+    "expected": {
+      "shouldCallTools": true,
+      "paths": [
+        [
+          {
+            "tool": "get_time",
+            "round": 1
+          },
+          {
+            "tool": "search",
+            "round": 2
+          }
+        ],
+        [
+          {
+            "tool": "get_time",
+            "round": 1
+          },
+          {
+            "tool": "search",
+            "round": 1
+          }
+        ],
+        [
+          {
+            "tool": "search",
+            "round": 1
+          }
+        ]
+      ]
+    },
+    "argumentRules": [
+      {
+        "tool": "search",
+        "field": "query",
+        "rule": "semantic",
+        "hint": "应含指数关键词"
+      }
+    ],
+    "toolResults": {
+      "search": "搜索结果（替身）：上证指数收盘 3245.67 点。"
+    },
+    "notes": "金标：简单事实查询 → search 而非 deep_search。 【2026-10-31 修正】补前置工具备选路径——get_time（相对时间）/recall_memory（背景回查）先行是 M2.2/[Brief] 的正确行为，首测 3/3 采样一致复现。 【2026-10-31 二次修正】前置工具跨轮串行（模型取到日期/背景后再构造 question）为主路径，同轮并发与直发为备选。"
+  },
+  {
+    "id": "deep-search-004",
+    "category": "deep_search",
+    "description": "闲聊不委派",
+    "input": "今天心情不太好，陪我聊聊天",
+    "context": {
+      "scene": "c2c",
+      "authorName": "测试用户"
+    },
+    "historySeed": [],
+    "expected": {
+      "shouldCallTools": false,
+      "paths": []
+    },
+    "argumentRules": [],
+    "toolResults": {},
+    "notes": "金标：闲聊不调工具。"
+  },
+  {
+    "id": "deep-search-005",
+    "category": "deep_search",
+    "description": "背景浓缩进问题",
+    "input": "上次说过我老家在成都，帮我深入调研一下成都现在的购房政策",
+    "context": {
+      "scene": "c2c",
+      "authorName": "测试用户"
+    },
+    "historySeed": [],
+    "expected": {
+      "shouldCallTools": true,
+      "paths": [
+        [
+          {
+            "tool": "recall_memory",
+            "round": 1
+          },
+          {
+            "tool": "get_time",
+            "round": 1
+          },
+          {
+            "tool": "deep_search",
+            "round": 2
+          }
+        ],
+        [
+          {
+            "tool": "recall_memory",
+            "round": 1
+          },
+          {
+            "tool": "get_time",
+            "round": 2
+          },
+          {
+            "tool": "deep_search",
+            "round": 3
+          }
+        ],
+        [
+          {
+            "tool": "recall_memory",
+            "round": 1
+          },
+          {
+            "tool": "deep_search",
+            "round": 2
+          }
+        ],
+        [
+          {
+            "tool": "recall_memory",
+            "round": 1
+          },
+          {
+            "tool": "deep_search",
+            "round": 1
+          }
+        ],
+        [
+          {
+            "tool": "deep_search",
+            "round": 1
+          }
+        ]
+      ]
+    },
+    "argumentRules": [
+      {
+        "tool": "deep_search",
+        "field": "question",
+        "rule": "semantic",
+        "hint": "应包含调研主题的核心实体，自包含（含对话背景）"
+      }
+    ],
+    "toolResults": {
+      "deep_search": "[Purpose]调研报告（评测替身）：……约1500字报告正文……"
+    },
+    "notes": "考察 [Brief]：地域背景（成都）要进 question。 【2026-10-31 修正】补前置工具备选路径——get_time（相对时间）/recall_memory（背景回查）先行是 M2.2/[Brief] 的正确行为，首测 3/3 采样一致复现。 【2026-10-31 二次修正】前置工具跨轮串行（模型取到日期/背景后再构造 question）为主路径，同轮并发与直发为备选。 【三次修正】recall+get_time 同轮并发再委派（3/3 采样一致的第三形态）补为主路径。"
   }
 ]

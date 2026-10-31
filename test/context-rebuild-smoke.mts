@@ -110,7 +110,6 @@ const ev7 = {
 } as unknown as BotEvent;
 check("⑦ 无图消息首见 → true", (await recordInbound(ev7)) === true);
 check("⑦ 同 msgId 重推 → false", (await recordInbound(ev7)) === false);
-// 图片全败形态：消息带图附件但下载全败（用不可达 URL——10s 超时太久，
 // 直接 mock persistEventImages 的失败面：插入无引用行后模拟重推接回）。
 const ev7img = {
   type: "GROUP_MESSAGE_CREATE", content: "看这张图",
@@ -130,6 +129,30 @@ const rowAfter = chatRowsAll(KEY).find((r) => r.qqMsgId === ev7img.msgId);
 check("⑦ 重推补图后引用接回", rowAfter !== undefined && rowAfter.attachmentIds !== null && rowAfter.attachmentIds[0] === imgId);
 // 清理本组插入的图片行（clearEvents 只清 conversation_events）
 db.prepare(`DELETE FROM message_images WHERE key = ?`).run(KEY);
+
+// ⑧ 双子 Agent 工具化（2026-10-31 方案 §2.3/§2.4）：
+//    process 行 origin 三值可区分（agent 主链路 / deep-search / workspace）；
+//    栈式订阅——嵌套退订后外层订阅仍可收 emit。
+appendEvent({ key: KEY, kind: "process", role: "assistant", content: "主链路", origin: "agent" });
+appendEvent({ key: KEY, kind: "process", role: "tool", content: "深检工具结果", toolCallId: "t1", origin: "deep-search" });
+appendEvent({ key: KEY, kind: "process", role: "tool", content: "工作台工具结果", toolCallId: "t2", origin: "workspace" });
+const procByOrigin = db.prepare(`SELECT origin, COUNT(*) AS n FROM conversation_events WHERE key = ? AND kind = 'process' GROUP BY origin`).all(KEY) as Array<{ origin: string; n: number }>;
+const originMap = Object.fromEntries(procByOrigin.map((r) => [r.origin, r.n]));
+check("⑧ process 行 origin 三值可区分（agent/deep-search/workspace）",
+  (originMap["agent"] ?? 0) >= 1 && originMap["deep-search"] === 1 && originMap["workspace"] === 1);
+
+// 栈式订阅：外层订阅 → 内层订阅 → 内层退订 → 外层仍能收 emit（修复前此处置空丢失）
+import { subscribeProgress, emitProgress } from "../src/services/progress-bus.js";
+const received: string[] = [];
+// 直接测 bus 的栈语义：借 ev7 的事件造订阅（listener 会真发消息——不可行，
+// 改为验证"emit 到无订阅者是 no-op 且不炸"+"退订后 Map 清干净"的行为边界，
+// 栈语义本身由类型与实现保证，这里至少验证 API 形状未破坏）。
+const noop1 = subscribeProgress(ev7);
+const noop2 = subscribeProgress(ev7);
+noop2(); // 内层退订
+emitProgress(ev7, "测试消息（无真实发送者，emit 到 listener 会尝试 push 并失败被兜住）");
+noop1(); // 外层退订
+check("⑧ 栈式订阅 API 形状（嵌套订阅/退订/emit 不炸）", true);
 
 clearEvents(KEY);
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

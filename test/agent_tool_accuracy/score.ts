@@ -107,6 +107,10 @@ export const TOOL_SCHEMAS: Record<
     required: ["seconds", "description"],
   },
   recall_memory: { properties: {}, required: [] },
+  deep_search: {
+    properties: { question: { type: "string" } },
+    required: ["question"],
+  },
 };
 
 // ---------- 路径匹配 ----------

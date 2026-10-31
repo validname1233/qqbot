@@ -16,6 +16,31 @@ import { runTool, toolSchemas } from "./code-workspace/registry.js";
 import { CODE_WORKSPACE_SYSTEM_PROMPT } from "../services/prompts/code-workspace.js";
 import { config } from "../config.js";
 import { logger } from "../services/logger.js";
+import { appendEvent } from "./memory/events.js";
+import { tenantKey } from "../session/key.js";
+import type { BotEvent } from "../events/registry.js";
+
+// 过程归档（双子 Agent 工具化方案 §2.3，2026-10-31）：子 Agent 中间过程落
+// process 行（origin="workspace"），与主链路/深检同构；永不投影（v7），
+// 仅排查回放。落库失败不炸图（档案缺行 < 任务中断）。
+function archiveWorkspaceProcess(
+  event: BotEvent,
+  row: { role: "assistant" | "tool"; content: string | null; toolCalls?: ChatMessage["tool_calls"]; toolCallId?: string },
+): void {
+  try {
+    appendEvent({
+      key: tenantKey(event),
+      kind: "process",
+      role: row.role,
+      content: row.content,
+      toolCalls: row.toolCalls,
+      toolCallId: row.toolCallId,
+      origin: "workspace",
+    });
+  } catch (err) {
+    logger.warn("workspace", `过程归档失败（忽略）：${err instanceof Error ? err.message : err}`);
+  }
+}
 
 // messages 用累加式 ReducedValue（与主图同款）；其余字段每次整体覆盖。
 // deadline 在入口算好传入；interruptSignal 可选，节点入口检查。
@@ -56,6 +81,13 @@ async function llmCall(state: WorkspaceStateT): Promise<WorkspaceUpdateT> {
     "workspace",
     state.interruptSignal ?? undefined,
   );
+  // 过程归档（双子 Agent 工具化方案 §2.3）：子 Agent 的中间输出落 process 行
+  //（origin="workspace"），永不投影（v7），排查回放用。落库失败不炸图。
+  archiveWorkspaceProcess(state.ctx.event, {
+    role: "assistant",
+    content: message.content,
+    toolCalls: message.tool_calls,
+  });
   return { messages: [message] };
 }
 
@@ -73,6 +105,7 @@ async function toolsNode(state: WorkspaceStateT): Promise<WorkspaceUpdateT> {
       args = {};
     }
     const result = await runTool(call.function.name, args, state.ctx);
+    archiveWorkspaceProcess(state.ctx.event, { role: "tool", content: result, toolCallId: call.id });
     toolMessages.push({ role: "tool", content: result, tool_call_id: call.id });
   }
   return { messages: toolMessages, turnCount: state.turnCount + 1 };

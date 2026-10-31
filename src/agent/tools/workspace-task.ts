@@ -41,7 +41,8 @@ export const workspaceTaskTool: Tool = {
     },
     required: ["task"],
   },
-  progressNote: "正在委派工作台任务…",
+  // progressNote 不声明（2026-10-31 清理）：run-task.ts 内部的"工作台任务开始…"
+  // 紧随其后且信息量更大，壳层再推一条构成同秒连发（双子 Agent 工具化方案 §2.5）。
 
   async run(args, ctx: MessageContext): Promise<string> {
     const task = asString(args, "task");

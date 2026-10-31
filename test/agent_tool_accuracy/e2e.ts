@@ -235,12 +235,17 @@ const { searchTool } = await import("../../src/agent/tools/search.js");
 const { agentOpenPageTool } = await import("../../src/agent/tools/open-page.js");
 const { getTimeTool } = await import("../../src/agent/tools/get-time.js");
 const { recallMemoryTool } = await import("../../src/agent/tools/recall-memory.js");
+const { deepSearchTaskTool } = await import("../../src/agent/tools/deep-search-task.js");
 
 // 工具替身：名称/描述/参数 schema 全部沿用生产定义（模型看到的工具表不变），
 // 只替换 run——记录注入后的最终执行参数，返回 cases.json 配置的固定结果。
 // progressNote 一律去掉（不触发进度推送 → 无 QQ 外呼）。
+// deep_search 的替身尤其重要（2026-10-31 教训）：不替换的话 run 会走真实
+// runDeepSearch 委派——真搜索真抓网页，内部调用全计入轨迹，评分全灭
+//（agent-eval-live-2026-10-31T14-00-37 的 3/15 就是这么来的）。
 const productionTools: Tool[] = [
   setReminderTool, searchTool, agentOpenPageTool, getTimeTool, recallMemoryTool,
+  deepSearchTaskTool,
 ];
 for (const tool of productionTools) {
   registerTool({
