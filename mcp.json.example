@@ -3,15 +3,21 @@
     "kb": {
       "url": "http://your-gateway.example.com:28080/rag",
       "apiKey": "这里填端侧服务器的 Bearer key（omen6:~/MCP_RAG/.env 的 KB_BEARER_KEY）",
-      "expose": ["kb_search"],
+      "expose": [
+        "kb_search",
+        "kb_add_note"
+      ],
       "progressNotes": {
         "kb_search": "正在检索知识库…",
-        "kb_issue_link": "正在生成管理链接…"
+        "kb_issue_link": "正在生成管理链接…",
+        "kb_add_note": "正在保存知识…"
       }
     },
     "home": {
       "url": "http://192.168.0.10:3001/mcp",
-      "expose": ["*"]
+      "expose": [
+        "*"
+      ]
     }
   }
 }

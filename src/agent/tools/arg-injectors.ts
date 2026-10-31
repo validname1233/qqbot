@@ -76,3 +76,11 @@ registerArgInjector("mcp_kb_kb_search", {
   inject: (args, ctx) => ({ ...args, scope: `kb:${tenantKey(ctx.event)}` }),
   hideFromModel: ["scope"],
 });
+
+// kb_add_note（Agent 笔记工具，2026-10-31）：写操作的租户隔离更严格——模型只
+// 保留 title/content 的发言权，scope 同样强制注入（写错库的代价高于读错库）。
+// 产品决策：所有能跟 bot 说话的会话成员都可写（群友共写群库，私聊写个人库）。
+registerArgInjector("mcp_kb_kb_add_note", {
+  inject: (args, ctx) => ({ ...args, scope: `kb:${tenantKey(ctx.event)}` }),
+  hideFromModel: ["scope"],
+});
