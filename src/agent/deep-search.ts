@@ -564,16 +564,24 @@ export async function runDeepSearch(
   logger.node("agent", `[/深度检索] 收到（${question.slice(0, 40)}${question.length > 40 ? "…" : ""}）`);
 
   try {
-    const result = await deepSearchGraph.invoke({
-      messages: [],
-      chain: [],
-      startMaterial: "",
-      hasStartUrls: false,
-      question,
-      ctx,
-      skipMemory: false,
-      interruptSignal: signal,
-    });
+    const result = await deepSearchGraph.invoke(
+      {
+        messages: [],
+        chain: [],
+        startMaterial: "",
+        hasStartUrls: false,
+        question,
+        ctx,
+        skipMemory: false,
+        interruptSignal: signal,
+      },
+      // recursionLimit：LangGraph 每个超步计一步，默认 25。深检浏览循环
+      //（browseLlm ⇄ browseTools，每轮 2 步 × BROWSE_MAX_TURNS 默认 6 轮 = 12 步，
+      // 加上 search/plan/synthesize 各 1~2 步）常态够用，但 browseLlm 单轮可
+      // 并发多个工具调用、加上计划阶段的自寻起点轮次时步数会超预期——调到 60
+      // 与另两图统一。真正的轮次约束由 browseMaxTurns 承担。
+      { recursionLimit: 60 },
+    );
 
     // 被 /stop 中断：静默返回（与主 Agent 的中断语义一致），报告未产出。
     if (signal?.aborted) {
@@ -621,16 +629,19 @@ export async function runDeepSearchLocally(question: string): Promise<string> {
   // 本地测试不挂中断注册表（不占用会话锁，/stop 也管不到测试进程），
   // signal 传 null：图内各节点对 null 容忍（可选链 + 默认不中断）。
   try {
-    const result = await deepSearchGraph.invoke({
-      messages: [],
-      chain: [],
-      startMaterial: "",
-      hasStartUrls: false,
-      question,
-      ctx,
-      skipMemory: true,
-      interruptSignal: null,
-    });
+    const result = await deepSearchGraph.invoke(
+      {
+        messages: [],
+        chain: [],
+        startMaterial: "",
+        hasStartUrls: false,
+        question,
+        ctx,
+        skipMemory: true,
+        interruptSignal: null,
+      },
+      { recursionLimit: 60 }, // 与生产入口同款（见 runDeepSearch 内注释）
+    );
     return result.report ?? "（深度检索没有生成报告）";
   } finally {
     await releaseBrowser();

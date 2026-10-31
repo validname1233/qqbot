@@ -212,12 +212,18 @@ export async function runAgentTurn(
     // messages 初始值留空：prepareContext 负责拼 [system, ...投影, u_now]。
     // 入库不在 runAgentTurn：chat_user 由 dispatcher 收口、process 由节点
     // 就地、chat_bot 由出站收口（v2 决议）。
-    const result = await agentGraph.invoke({
-      messages: [],
-      ctx,
-      userText,
-      interruptSignal: controller.signal,
-    });
+    const result = await agentGraph.invoke(
+      {
+        messages: [],
+        ctx,
+        userText,
+        interruptSignal: controller.signal,
+      },
+      // recursionLimit：LangGraph 把每个超步（super-step）计一步，默认 25——
+      // 本图四节点一轮工具要 3~4 步，MAX_TOOL_TURNS=2 远用不到；调高是防御性
+      // 取值（与深检/工作台统一 60），真正的轮次约束由 MAX_TOOL_TURNS 承担。
+      { recursionLimit: 60 },
+    );
 
     if (controller.signal.aborted) {
       return "";

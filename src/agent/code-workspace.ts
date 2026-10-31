@@ -175,13 +175,20 @@ export async function runWorkspaceGraph(
   deadline: number,
   signal: AbortSignal | undefined,
 ): Promise<string> {
-  const result = await workspaceGraph.invoke({
-    task,
-    ctx,
-    deadline,
-    turnCount: 0,
-    interruptSignal: signal ?? null,
-  });
+  const result = await workspaceGraph.invoke(
+    {
+      task,
+      ctx,
+      deadline,
+      turnCount: 0,
+      interruptSignal: signal ?? null,
+    },
+    // recursionLimit：默认 25 对工作台不够——写代码任务的"写→跑→看报错→改→
+    // 再跑"循环每轮 2 个超步 × WORKSPACE_MAX_TURNS 默认 12 轮 = 24 步，加上
+    // prepareContext/finalize 就贴着上限了。60 与另两图统一；真正的轮次约束
+    // 由 workspaceMaxTurns 承担。
+    { recursionLimit: 60 },
+  );
   const report = (result as WorkspaceStateT).report;
   if (report === null || report === "") {
     logger.warn("workspace", "图执行完毕但 report 为空（可能被中断）");
