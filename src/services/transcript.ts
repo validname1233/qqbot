@@ -13,7 +13,7 @@
 
 import type { BotEvent } from "../events/registry.js";
 import { tenantKey } from "../session/key.js";
-import { appendEvent, chatRows } from "../agent/memory/events.js";
+import { appendEvent, db } from "../agent/memory/events.js";
 import { persistEventImages, pruneImagesOutsideWindow } from "../agent/memory/images.js";
 import { isImageAttachment } from "../events/attachments.js";
 import { logger } from "./logger.js";
@@ -23,27 +23,27 @@ import { logger } from "./logger.js";
 // 消息正文 + 附件引用的合成口径：图片下载入库后按 attachment_ids 引用（v8），
 // content 存 QQ 原文（含 faceType 标签，不掺我方占位符）。纯附件空文本也落行
 // （content 空串合法——"发了个东西"本身是历史的一部分）。
-export async function recordInbound(event: BotEvent): Promise<void> {
+//
+// 返回值（2026-10-30 分发层短路决议）：true = 本条消息首次见到（落了新行），
+// false = QQ 重推（UNIQUE 吸收，行已在）或转录异常——调用方（dispatcher）
+// 据此短路 handler，保证"执行恰一次"。
+// 图片全败也落行（attachmentIds=null）：消息事实与"已处理"标记统一在行上；
+// QQ 重推时 persistEventImages 会把缺的图补进图片表，此处 UPDATE 接上引用
+// （懒补全）；没重推就按无图降级（投影时 [图片] 裸标记，语义自明）。
+export async function recordInbound(event: BotEvent): Promise<boolean> {
   const key = tenantKey(event);
   try {
     // 先持久化附件拿 id 列表（图片下载 ≤10s 超时兜底），再写 chat_user 行。
     // persistEventImages 内部 UNIQUE 吸收 QQ 重推的重复下载。
     const attachmentIds = await persistEventImages(event);
-    if (attachmentIds.length === 0 && event.attachments.some(isImageAttachment)) {
-      // 下载全军覆没（超时/过大/网络）：图片行一个都没建。若此时照常落
-      // chat_user（attachmentIds=null），图片信息从此丢失——QQ 的 URL 有时效，
-      // 事后无图可查。补救：删除本条消息已有的行（若 UNIQUE 撞上重推的旧成功
-      // 行则保留旧的），强制下次重推时重走完整下载。代价是这条消息暂时不在
-      // L2（可接受——它带图，投影里本就缺半边）。
-      const existing = chatRows(key, 1).find((r) => r.qqMsgId === event.msgId);
-      if (existing === undefined) {
-        logger.warn("memory", `图片全部下载失败，消息暂不入库（msgId=${event.msgId.slice(0, 12)}…），等待重推补全`);
-        return;
-      }
-      // 重推且旧行存在（之前有图成功过）——沿用旧行，本条不重复写。
-      return;
+    const hasImageAttachments = event.attachments.some(isImageAttachment);
+
+    if (attachmentIds.length === 0 && hasImageAttachments) {
+      // 下载全军覆没（超时/过大/网络）：仍落行（attachmentIds=null，无图降级）。
+      logger.warn("memory", `图片全部下载失败，按无图入库（msgId=${event.msgId.slice(0, 12)}…），重推时补`);
     }
-    appendEvent({
+
+    const inserted = appendEvent({
       key,
       kind: "chat_user",
       role: "user",
@@ -52,11 +52,31 @@ export async function recordInbound(event: BotEvent): Promise<void> {
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : null,
       qqMsgId: event.msgId,
     });
+
+    if (inserted === null) {
+      // 重推：行已存在。若本次补下了图而原行是无图降级（引用为 NULL），
+      // UPDATE 接上引用——消息行的"带图"事实恢复，下轮投影即展开。
+      if (attachmentIds.length > 0) {
+        const reattached = db
+          .prepare(`UPDATE conversation_events SET attachment_ids = ? WHERE key = ? AND qq_msg_id = ? AND attachment_ids IS NULL`)
+          .run(JSON.stringify(attachmentIds), key, event.msgId);
+        if (reattached.changes > 0) {
+          logger.info("memory", `重推补图成功，已接回消息行引用（msgId=${event.msgId.slice(0, 12)}…）`);
+          pruneImagesOutsideWindow(key);
+        }
+      }
+      return false;
+    }
+
     // prune 挂在 chat 行落库之后（引用已建立，新图不会被误判 stale）。
     if (attachmentIds.length > 0) pruneImagesOutsideWindow(key);
+    return true;
   } catch (err) {
     // 入站转录失败不阻塞业务分发（档案缺一行 < 机器人失联），但必须可见。
+    // 返回 true（当首见处理）：转录失败不该挡住 handler，宁可冒重复执行的风险
+    //（异常路径本就罕见）也不静默丢用户消息。
     logger.warn("memory", `入站转录失败（key=${key.slice(0, 10)}…）：${err instanceof Error ? err.message : err}`);
+    return true;
   }
 }
 

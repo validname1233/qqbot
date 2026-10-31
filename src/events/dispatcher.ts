@@ -9,6 +9,7 @@ import { handleC2CMessage } from "../handlers/C2C_MESSAGE_CREATE.js";
 import { handleGroupAtMessage } from "../handlers/GROUP_AT_MESSAGE_CREATE.js";
 import { handleGroupMessage } from "../handlers/GROUP_MESSAGE_CREATE.js";
 import { recordInbound } from "../services/transcript.js";
+import { logger } from "../services/logger.js";
 
 // 遍历 BotEvent 的每个成员，用它的 type 当键，
 // 要求对应 handler 的入参正好是「那一种」事件。
@@ -31,8 +32,17 @@ export async function dispatch(event: BotEvent | null): Promise<void> {
   // 分叉之前先落一行 chat_user——"每类事件恰好一个写入者"的入站那一半。
   // 串行 await 是有意的：保证 chat_user 行 id 恒小于本轮 process/chat_bot 行
   // （时间线正确）；带图消息的代价是一次图片下载（≤10s 超时，常态 1~2s）。
-  // 重推由 UNIQUE(key, qq_msg_id) 吸收（appendEvent 静默跳过）。
-  await recordInbound(event);
+  //
+  // 分发层短路（2026-10-30 决议）：recordInbound 返回 false = UNIQUE 撞上
+  // （QQ 重推同一条事件）——行已在库，handler 跳过，保证"执行恰一次"
+  //（此前只挡住了重复落库，重推仍会重跑完整 /Agent：重复烧钱 + 重复回复）。
+  // 幂等锚点即库的 UNIQUE，非进程内 LRU——无容量边界，重启不失效，重放
+  // 历史消息（验签无新鲜度窗口的已知缺口）同样被短路挡在执行层之外。
+  const firstSeen = await recordInbound(event);
+  if (!firstSeen) {
+    logger.info("events", `QQ 重推事件，分发层短路（msgId=${event.msgId.slice(0, 12)}…）`);
+    return;
+  }
 
   // event.type 和 handlers[event.type] 的入参是关联的，但 TS 无法自动证明
   // 这种「关联联合」的对应关系，故做一次局部断言。运行时是安全的：

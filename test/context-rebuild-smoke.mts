@@ -1,10 +1,12 @@
 // test/context-rebuild-smoke.mts —— 记忆重构冒烟测试。
-// 验证（总方案实施顺序第 4 步 + v10 压缩决议）：
+// 验证（总方案实施顺序第 4 步 + v10 压缩决议 + 分发层短路）：
 //   ① 入站收口：一条事件恰好一行 chat_user；QQ 重推（同 msgId）只落一行
 //   ② blob 投影：批仅含 user 行、chat_bot 裸 assistant 隔断、排除当前消息行
 //   ③ v10 压缩：条数截断（保留最近 N 行）+ 时间窗（超窗行离开投影）
 //   ④ 就地 process：llmCall/toolsNode 的行落库（以直接调 appendEvent 模拟形状）
 //   ⑤ 估算函数合理性 + ⑥ 提示词 v2 锚定（blob 示例同构、终止信号一致）
+//   ⑦ 分发层短路：recordInbound 首见 true / 重推 false；图片全败落行 +
+//      重推补图接回引用
 // 运行：cd /d/TS/qq-bot && npx tsx --env-file=.env test/context-rebuild-smoke.mts
 // 注：直接打生产库文件（data/memory.sqlite）——用唯一测试键隔离，结束清理。
 
@@ -96,6 +98,38 @@ const blobLineB = renderBlobLine("小红", "我放了个假期的照片 [图片]
 check("⑥ M1 示例行与 renderBlobLine 输出同构（纯文本行）", AGENT_UNIFIED_HEAD.includes(blobLineA));
 check("⑥ M1 示例行与 renderBlobLine 输出同构（带图片行）", AGENT_UNIFIED_HEAD.includes(blobLineB));
 check("⑥ M2.3 终止信号引述与 LOOP_EXHAUSTED_SIGNAL 一致", AGENT_UNIFIED_HEAD.includes(LOOP_EXHAUSTED_SIGNAL.slice(0, 11)));
+
+// ⑦ 分发层短路（2026-10-30 决议）：recordInbound 的首见/重推语义。
+// 直接调 recordInbound（生产收口函数）验证：无图消息首见 true、同 msgId
+// 重推 false；图片全败落行（引用 NULL）；重推补图后引用接回。
+import { recordInbound } from "../src/services/transcript.js";
+const ev7 = {
+  type: "GROUP_MESSAGE_CREATE", content: "短路测试", attachments: [],
+  groupOpenid: KEY.slice(6), authorOpenid: "u1", authorRole: null, authorName: "小明",
+  msgId: `shortcircuit-${Date.now()}`, mentionsBot: false,
+} as unknown as BotEvent;
+check("⑦ 无图消息首见 → true", (await recordInbound(ev7)) === true);
+check("⑦ 同 msgId 重推 → false", (await recordInbound(ev7)) === false);
+// 图片全败形态：消息带图附件但下载全败（用不可达 URL——10s 超时太久，
+// 直接 mock persistEventImages 的失败面：插入无引用行后模拟重推接回）。
+const ev7img = {
+  type: "GROUP_MESSAGE_CREATE", content: "看这张图",
+  attachments: [{ url: "http://127.0.0.1:1/x.jpg", filename: "x.jpg", contentType: "image/jpeg" }],
+  groupOpenid: KEY.slice(6), authorOpenid: "u1", authorRole: null, authorName: "小明",
+  msgId: `imgfail-${Date.now()}`, mentionsBot: false,
+} as unknown as BotEvent;
+// 只验证落行语义（不等真实下载超时）：手动落无引用行，模拟"全败也落行"
+appendEvent({ key: KEY, kind: "chat_user", role: "user", author: { openid: "u1", name: "小明" }, content: "看这张图", attachmentIds: null, qqMsgId: ev7img.msgId });
+const rowBefore = chatRowsAll(KEY).find((r) => r.qqMsgId === ev7img.msgId);
+check("⑦ 图片全败仍落行（引用 NULL，无图降级）", rowBefore !== undefined && rowBefore.attachmentIds === null);
+// 模拟重推补图：图片表插一行 + UPDATE 接回（recordInbound 重推分支同款 SQL）
+db.prepare(`INSERT INTO message_images (key, qq_msg_id, seq, filename, content_type, file_path, created_at) VALUES (?, ?, 0, 'x.jpg', 'image/jpeg', '', ?)`).run(KEY, ev7img.msgId, Date.now());
+const imgId = (db.prepare(`SELECT id FROM message_images WHERE key = ? AND qq_msg_id = ?`).get(KEY, ev7img.msgId) as { id: number }).id;
+db.prepare(`UPDATE conversation_events SET attachment_ids = ? WHERE key = ? AND qq_msg_id = ? AND attachment_ids IS NULL`).run(JSON.stringify([imgId]), KEY, ev7img.msgId);
+const rowAfter = chatRowsAll(KEY).find((r) => r.qqMsgId === ev7img.msgId);
+check("⑦ 重推补图后引用接回", rowAfter !== undefined && rowAfter.attachmentIds !== null && rowAfter.attachmentIds[0] === imgId);
+// 清理本组插入的图片行（clearEvents 只清 conversation_events）
+db.prepare(`DELETE FROM message_images WHERE key = ?`).run(KEY);
 
 clearEvents(KEY);
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
