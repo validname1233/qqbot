@@ -20,6 +20,7 @@ import { stripAtBotMention } from "./events/GROUP_MESSAGE_CREATE/index.js";
 import { knowledgeBaseService } from "./services/knowledge-base.js";
 import { helpService } from "./services/help.js";
 import { stopService } from "./services/stop.js";
+import { diceService } from "./services/dice.js";
 import { logger } from "./services/logger.js";
 import { runSession } from "./session/runner.js";
 
@@ -57,6 +58,8 @@ registerCommand(knowledgeBaseService);
 registerCommand(helpService);
 // 强制中断：拉闸当前会话正在跑的 Agent/深度检索流程（interrupt.ts 注册表）。
 registerCommand(stopService);
+// 掷骰子：/r 1d100+20 —— TRPG 风格骰子表达式（骰数d面数±修正），纯本地随机。
+registerCommand(diceService);
 
 // 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
 // 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。
