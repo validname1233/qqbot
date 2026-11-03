@@ -13,6 +13,7 @@ import { runAgentTurn } from "../../agent/loop.js";
 import { pushGroupMessage, pushC2CMessage } from "../../qq/messages.js";
 import { listEnabledTasks, type ScheduledTask } from "./store.js";
 import { logger } from "../logger.js";
+import { startRun } from "../trace.js";
 
 // 活跃 cron 任务表（任务 id -> ScheduledTask）。进程内状态，不落库——
 // 重启后靠 initializeScheduler 从数据库重建。
@@ -78,19 +79,28 @@ async function runScheduledTask(task: ScheduledTask): Promise<void> {
     return;
   }
 
-  logger.info("scheduler", `任务 ${task.id} 触发（${task.sessionKey} ${task.hour}:${task.minute}）`);
-  const reply = await runAgentTurn(task.prompt, ctx);
-  if (reply === "" || reply.startsWith("上一个任务还在跑")) {
-    logger.info("scheduler", `任务 ${task.id} 跳过（会话忙或无输出）`);
-    return;
-  }
+  // runId 入口（2026-11-03 方案 §4.3）：cron 起的流程没有入站事件，自己
+  // startRun；锚点行兼作原有的「任务触发」日志。try/catch 从 registerCron
+  // 的外层 .catch 移进 run 内——失败日志也挂在本任务的 runId 下。
+  await startRun(async () => {
+    try {
+      logger.node("scheduler", `run 开始（任务 ${task.id} 触发，${task.sessionKey} ${task.hour}:${task.minute}）`);
+      const reply = await runAgentTurn(task.prompt, ctx);
+      if (reply === "" || reply.startsWith("上一个任务还在跑")) {
+        logger.info("scheduler", `任务 ${task.id} 跳过（会话忙或无输出）`);
+        return;
+      }
 
-  const target = parseSessionKey(task.sessionKey);
-  if (target?.type === "group") {
-    await pushGroupMessage(target.openid, reply);
-  } else if (target?.type === "c2c") {
-    await pushC2CMessage(target.openid, reply);
-  }
+      const target = parseSessionKey(task.sessionKey);
+      if (target?.type === "group") {
+        await pushGroupMessage(target.openid, reply);
+      } else if (target?.type === "c2c") {
+        await pushC2CMessage(target.openid, reply);
+      }
+    } catch (err) {
+      logger.error("scheduler", `任务 ${task.id} 执行失败: ${err instanceof Error ? err.message : err}`);
+    }
+  });
 }
 
 // 给一条任务建 cron。同 id 先销毁旧的（配置更新时 task.ts 调 removeTaskSync

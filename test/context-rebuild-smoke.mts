@@ -7,6 +7,8 @@
 //   ⑤ 估算函数合理性 + ⑥ 提示词 v2 锚定（blob 示例同构、终止信号一致）
 //   ⑦ 分发层短路：recordInbound 首见 true / 重推 false；图片全败落行 +
 //      重推补图接回引用
+//   ⑧ 双子工具化：process origin 三值 + 栈式订阅 API 形状
+//   ⑨ runId 追踪：同一 run 内 id 稳定、链外 null、嵌套 startRun 内层新 id
 // 运行：cd /d/TS/qq-bot && npx tsx --env-file=.env test/context-rebuild-smoke.mts
 // 注：直接打生产库文件（data/memory.sqlite）——用唯一测试键隔离，结束清理。
 
@@ -153,6 +155,23 @@ noop2(); // 内层退订
 emitProgress(ev7, "测试消息（无真实发送者，emit 到 listener 会尝试 push 并失败被兜住）");
 noop1(); // 外层退订
 check("⑧ 栈式订阅 API 形状（嵌套订阅/退订/emit 不炸）", true);
+
+// ⑨ runId 链路追踪（2026-11-03 方案 §6）：同一 startRun 内 getRunId 稳定；
+//    链外 null；嵌套 startRun 内层拿新 id、退出后外层恢复；两次 run 互不相同。
+import { startRun, getRunId } from "../src/services/trace.js";
+check("⑨ 链外 getRunId() 为 null", getRunId() === null);
+const nested = await startRun(async () => {
+  const outer = getRunId();
+  const inner = await startRun(async () => getRunId());
+  return { outer, inner, after: getRunId() };
+});
+check("⑨ run 内 runId 为 8 位 hex", nested.outer !== null && /^[0-9a-f]{8}$/.test(nested.outer));
+check("⑨ 嵌套 startRun：内层新 id、退出后外层恢复",
+  nested.inner !== null && nested.inner !== nested.outer && nested.after === nested.outer);
+check("⑨ run 结束后回到链外 null", getRunId() === null);
+const id1 = await startRun(async () => getRunId());
+const id2 = await startRun(async () => getRunId());
+check("⑨ 两次 startRun 的 runId 不同", id1 !== null && id2 !== null && id1 !== id2);
 
 clearEvents(KEY);
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

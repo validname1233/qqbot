@@ -24,12 +24,17 @@ import { appendFile, mkdir, readdir, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "../config.js";
+import { getRunId } from "./trace.js";
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 } as const;
 export type LogLevel = keyof typeof LEVELS;
 export type Verbosity = "trace" | "detail";
 
+// runId 关联（2026-11-03 runId 链路追踪方案）：emit 时从 AsyncLocalStorage
+// 读当前运行，有则两个 sink 都在 [severity] 与 [module] 之间插一段 [runId]；
+// 链外日志（启动期、定时器裸回调）无此段，行格式与旧版逐字一致。
 interface LogEvent {
+  runId: string | null;
   verbosity: Verbosity;
   severity: LogLevel;
   module: string;
@@ -50,7 +55,8 @@ function consoleTimestamp(d: Date): string {
 
 function consoleSink(event: LogEvent): void {
   // warn/error 走 stderr（pm2/重定向分流），debug/info 走 stdout——与旧版一致。
-  const line = `[${consoleTimestamp(new Date(event.ts))}] [${event.severity}] [${event.module}] ${event.message}`;
+  const runTag = event.runId === null ? "" : ` [${event.runId}]`;
+  const line = `[${consoleTimestamp(new Date(event.ts))}] [${event.severity}]${runTag} [${event.module}] ${event.message}`;
   if (event.severity === "warn" || event.severity === "error") {
     console.error(line);
   } else {
@@ -104,7 +110,8 @@ function fileSink(event: LogEvent): void {
     onDayRoll?.();
   }
 
-  const line = `${fileTimestamp(event.ts)} [${event.severity}] [${event.module}] ${event.message}\n`;
+  const runTag = event.runId === null ? "" : ` [${event.runId}]`;
+  const line = `${fileTimestamp(event.ts)} [${event.severity}]${runTag} [${event.module}] ${event.message}\n`;
   writeChain = writeChain
     .then(() => appendFile(currentPath, line, "utf8"))
     .then(() => undefined)
@@ -163,7 +170,7 @@ function hookFlush(): void {
 // ---------- 分发 ----------
 
 function emit(verbosity: Verbosity, severity: LogLevel, module: string, message: string): void {
-  const event: LogEvent = { verbosity, severity, module, message, ts: Date.now() };
+  const event: LogEvent = { runId: getRunId(), verbosity, severity, module, message, ts: Date.now() };
   // console：detail 不进；severity 低于 LOG_LEVEL 的 trace 也不进（保持旧行为）
   if (verbosity === "trace" && LEVELS[severity] >= consoleThreshold) {
     consoleSink(event);

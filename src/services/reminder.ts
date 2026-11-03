@@ -12,6 +12,7 @@ import { callModel } from "./model.js";
 import { pushC2CMessage, pushGroupMessage } from "../qq/messages.js";
 import { getSystemPrompt } from "./prompts/builder.js";
 import { logger } from "./logger.js";
+import { startRun } from "./trace.js";
 
 const MIN_SECONDS = 10;
 const MAX_SECONDS = 86400; // 一天
@@ -89,9 +90,17 @@ export function scheduleReminder(
 
   // 排期。setTimeout 只登记「未来某刻跑一次」，立即返回、不占线程。
   // 回调本身必须自带 try/catch：定时器回调里的异常没人接，漏出去会拖垮进程。
+  // runId 重挂（2026-11-03 方案 §5.3）：ALS 沿创建时的上下文进回调——不重挂
+  // 的话，两小时后触发的日志会挂在早已结束的「设置提醒」那次运行名下。
+  // try/catch 放 run 内：失败日志也挂本次触发的 runId。
   setTimeout(() => {
-    void push().catch((err: unknown) => {
-      logger.error("reminder", `到点推送失败: ${err instanceof Error ? err.message : err}`);
+    void startRun(async () => {
+      try {
+        logger.node("reminder", `run 开始（定时提醒触发，${seconds}s 前设置）`);
+        await push();
+      } catch (err) {
+        logger.error("reminder", `到点推送失败: ${err instanceof Error ? err.message : err}`);
+      }
     });
   }, seconds * 1000);
 

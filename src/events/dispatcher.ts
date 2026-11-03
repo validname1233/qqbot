@@ -10,6 +10,7 @@ import { handleGroupAtMessage } from "../handlers/GROUP_AT_MESSAGE_CREATE.js";
 import { handleGroupMessage } from "../handlers/GROUP_MESSAGE_CREATE.js";
 import { recordInbound } from "../services/transcript.js";
 import { logger } from "../services/logger.js";
+import { startRun } from "../services/trace.js";
 
 // 遍历 BotEvent 的每个成员，用它的 type 当键，
 // 要求对应 handler 的入参正好是「那一种」事件。
@@ -48,5 +49,12 @@ export async function dispatch(event: BotEvent | null): Promise<void> {
   // 这种「关联联合」的对应关系，故做一次局部断言。运行时是安全的：
   // 每个 type 对应的 handler 就是接收那种事件的函数。
   const handler = handlers[event.type] as (e: BotEvent) => Promise<void>;
-  await handler(event);
+  // runId 入口（2026-11-03 方案 §4.3）：这条消息的整条处理链（handler 内
+  // runCommand 与 runObservers 两分支）共享同一 runId。首行锚点：webhook
+  // 正常路径没有逐事件日志、转录日志又在 startRun 之前（不带 id）——锚点
+  // 行让 grep runId 抽出的轨迹有明确起点。
+  await startRun(async () => {
+    logger.node("events", `run 开始（${event.type}，msgId=${event.msgId.slice(0, 12)}…）`);
+    await handler(event);
+  });
 }
