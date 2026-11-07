@@ -35,7 +35,7 @@ import { config } from "../config.js";
 import type { MessageContext } from "../types.js";
 import type { ChatMessage, ToolSchema } from "./types.js";
 import { webSearch, formatSearchResults } from "../services/search.js";
-import { callModel, isAbortError } from "../services/model.js";
+import { callModel, isAbortError, isTimeoutError } from "../services/model.js";
 import { getSystemPrompt } from "../services/prompts/builder.js";
 import { releaseBrowser } from "../services/browse/browser.js";
 import { toolSchemas, runTool } from "./deep-search/registry.js";
@@ -598,6 +598,12 @@ export async function runDeepSearch(
     if (isAbortError(err)) {
       logger.info("agent", "[/深度检索] 被 /stop 中断，静默收尾");
       return "";
+    }
+    // 模型调用超时（LLM_TIMEOUT_MS）：与 runAgentTurn 同款分流——超时给用户
+    // 交代，拉闸静默。委派态（ownFlow:false）不走这，由工具层兜成错误文本。
+    if (isTimeoutError(err)) {
+      logger.warn("agent", "[/深度检索] 模型响应超时，收尾");
+      return "模型这会儿响应太慢，超时了，稍后再试一次吧～";
     }
     throw err;
   } finally {

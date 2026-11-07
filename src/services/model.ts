@@ -70,36 +70,56 @@ export async function callModel(
     `[${consoleStamp()}] [model] [${label}] 请求输入全量（${messages.length} 条）：\n${renderMessagesPlain(messages)}`,
   );
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.aiApiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      ...(tools !== undefined && tools.length > 0 ? { tools } : {}),
-      // DeepSeek 的思考模式开关：必须显式传 disabled——它的默认值是 enabled，
-      // 不传的话工具判断/日常回复这类调用会静默带上思维链，多耗 token 且变慢。
-      thinking: { type: enableThinking ? "enabled" : "disabled" },
-    }),
-  });
+  // 超时中断（LLM_TIMEOUT_MS）：AbortSignal.timeout 到点抛 TimeoutError——
+  // 与 /stop 拉闸的 AbortError 名字不同，下游凭身份分流（isTimeoutError /
+  // isAbortError）。AbortSignal.any 与外部 signal 做"或"组合，谁先触发算谁的。
+  // 同一 signal 也覆盖响应体读取（fetch 规范：abort 打断 body 消费）。
+  const timeoutSignal = AbortSignal.timeout(config.llmTimeoutMs);
+  const effectiveSignal =
+    signal !== undefined ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
-  const elapsed = Date.now() - t0;
+  let elapsed = 0;
+  let data: ChatCompletionResponse | undefined;
+  let message: ChatMessage | undefined;
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      signal: effectiveSignal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.aiApiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        ...(tools !== undefined && tools.length > 0 ? { tools } : {}),
+        // DeepSeek 的思考模式开关：必须显式传 disabled——它的默认值是 enabled，
+        // 不传的话工具判断/日常回复这类调用会静默带上思维链，多耗 token 且变慢。
+        thinking: { type: enableThinking ? "enabled" : "disabled" },
+      }),
+    });
 
-  if (!response.ok) {
-    const detail = await response.text();
-    // 失败路径升 warn（阶段二分流遗漏的修正）：故障必须上控制台，debug 下静默
-    // 会让"模型调用失败"这一最重要的降级信号反而看不见。全文仍在 detail。
-    logger.warn("model", `[${label}] 大模型调用失败 (+${elapsed}ms) status=${response.status} detail=${detail.slice(0, 150)}`);
-    logger.detail("model", `[${label}] 调用失败响应体全文：${detail}`);
-    throw new Error(`AI 接口返回 ${response.status}: ${detail}`);
+    elapsed = Date.now() - t0;
+
+    if (!response.ok) {
+      const detail = await response.text();
+      // 失败路径升 warn（阶段二分流遗漏的修正）：故障必须上控制台，debug 下静默
+      // 会让"模型调用失败"这一最重要的降级信号反而看不见。全文仍在 detail。
+      logger.warn("model", `[${label}] 大模型调用失败 (+${elapsed}ms) status=${response.status} detail=${detail.slice(0, 150)}`);
+      logger.detail("model", `[${label}] 调用失败响应体全文：${detail}`);
+      throw new Error(`AI 接口返回 ${response.status}: ${detail}`);
+    }
+
+    data = (await response.json()) as ChatCompletionResponse;
+    message = data.choices?.[0]?.message;
+  } catch (err) {
+    // 超时告警后原样 rethrow——包装成普通 Error 会丢掉 TimeoutError 身份，
+    // 下游（runAgentTurn/runDeepSearch 的 catch）就没法与真故障分流了。
+    if (isTimeoutError(err)) {
+      logger.warn("model", `[${label}] 大模型调用超时 (+${Date.now() - t0}ms > ${config.llmTimeoutMs}ms)，已中断`);
+    }
+    throw err;
   }
-
-  const data = (await response.json()) as ChatCompletionResponse;
-  const message = data.choices?.[0]?.message;
   if (message === undefined) {
     logger.warn("model", `[${label}] 大模型调用失败 (+${elapsed}ms) 返回里没有 message 字段`);
     throw new Error("AI 接口返回里没有 message 字段");
@@ -171,4 +191,10 @@ function consoleStamp(): string {
 // "用户主动停"（静默收尾、不打 error 日志）还是"真故障"（正常错误路径）。
 export function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
+}
+
+// 超时识别：AbortSignal.timeout 的产物（name 是 "TimeoutError"，与拉闸的
+// AbortError 区分开）。超时要给用户一句交代，拉闸要静默——两个出口不同。
+export function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
 }

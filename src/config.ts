@@ -162,6 +162,10 @@ export const config = {
   logDetail: optionalEnv("LOG_DETAIL", "file") === "file",
   // 文件日志保留天数（选填）：超过的 bot-YYYY-MM-DD.log 启动时清理；0 = 永久。默认 14。
   logRetentionDays: optionalEnvNumber("LOG_RETENTION_DAYS", 14),
+  // 单次 LLM 调用墙钟超时（选填）：到点中断 fetch，防接口挂死拖垮整条消息链。
+  // 120s 的取值：QQ 被动回复窗口 5 分钟；收尾（thinking 开启）与深检报告生成
+  // 偶尔要几十秒，120s 只杀真挂死、不误伤慢而活的生成。
+  llmTimeoutMs: optionalEnvNumber("LLM_TIMEOUT_MS", 120000),
   // 深度检索（/深度检索）的预算与抓取限制（选填，均有默认值）：
   //   browseMaxTurns         —— 深检图 browseLlm⇄browseTools 循环上限（日常 Agent 的
   //                             MAX_TOOL_TURNS 保持 1，互不影响）。

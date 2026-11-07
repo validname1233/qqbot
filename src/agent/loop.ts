@@ -22,7 +22,7 @@ import { StateGraph, StateSchema, ReducedValue, START, END } from "@langchain/la
 import { z } from "zod";
 import type { MessageContext } from "../types.js";
 import { projectWindow, buildCurrentUserMessage } from "./assembly.js";
-import { callModel, isAbortError } from "../services/model.js";
+import { callModel, isAbortError, isTimeoutError } from "../services/model.js";
 import { logger } from "../services/logger.js";
 import { getAgentSystemPrompt, LOOP_EXHAUSTED_SIGNAL } from "../services/prompts/functional.js";
 import { runTool, toolSchemas } from "./registry.js";
@@ -241,6 +241,12 @@ export async function runAgentTurn(
     if (isAbortError(err)) {
       logger.info("agent", "[/Agent] 被 /stop 中断，静默收尾");
       return "";
+    }
+    // 模型调用超时（LLM_TIMEOUT_MS）：与拉闸对称的另一个出口——拉闸静默，
+    // 超时要给用户一句交代（不识别的话会冒泡成"功能坏了"兜底文案）。
+    if (isTimeoutError(err)) {
+      logger.warn("agent", "[/Agent] 模型响应超时，收尾");
+      return "模型这会儿响应太慢，超时了，稍后再试一次吧～";
     }
     throw err;
   } finally {
