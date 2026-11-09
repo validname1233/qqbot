@@ -114,12 +114,23 @@ require(["vs/editor/editor.main"], () => {
     readOnly: true,
     fontSize: 14,
   });
-  editor.onDidChangeContent(() => {
-    if (current === null) return;
-    current.dirty = true;
-    document.title = `● ${current.path.split("/").pop()} - 工作台`;
-    btnSave.disabled = false;
+  // 脏状态监听挂在 model 上（onDidChangeContent 是 model 的 API，不是
+  // editor 的——挂错对象会抛 TypeError 打断整个初始化回调）。每次换绑
+  // model（打开/切换文件）重新挂，旧 model 随替换被 GC，无需显式解绑。
+  const hookDirtyListener = (model) => {
+    model.onDidChangeContent(() => {
+      if (current === null) return;
+      current.dirty = true;
+      document.title = `● ${current.path.split("/").pop()} - 工作台`;
+      btnSave.disabled = false;
+    });
+  };
+  editor.onDidChangeModel((e) => {
+    if (e.newModel !== null && e.newModel !== undefined) hookDirtyListener(e.newModel);
   });
+  // 初次 setModel 发生在 onDidChangeModel 首次触发前无法覆盖（create 时
+  // 自带一个空 model），给当前 model 也补挂一次。
+  hookDirtyListener(editor.getModel());
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveFile);
   monaco.languages.typescript?.javascriptDefaults?.setDiagnosticsOptions({
     noSemanticValidation: true, // 无 tsconfig 语义检查，只留语法着色
