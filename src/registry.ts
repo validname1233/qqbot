@@ -21,6 +21,7 @@ import { knowledgeBaseService } from "./services/knowledge-base.js";
 import { helpService } from "./services/help.js";
 import { stopService } from "./services/stop.js";
 import { diceService } from "./services/dice.js";
+import { workspaceConsoleService } from "./services/workspace-console.js";
 import { logger } from "./services/logger.js";
 import { runSession } from "./session/runner.js";
 
@@ -60,6 +61,9 @@ registerCommand(helpService);
 registerCommand(stopService);
 // 掷骰子：/r 1d100+20 —— TRPG 风格骰子表达式（骰数d面数±修正），纯本地随机。
 registerCommand(diceService);
+// 工作台管理页入口：/工作台 签发浏览器文件管理器的链接（kb 同款两道闸）。
+// 仅在 WORKSPACE_UI_ENABLED 时可用（未开启时命令自身降级提示）。
+registerCommand(workspaceConsoleService);
 
 // 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
 // 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。

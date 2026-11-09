@@ -231,7 +231,25 @@ export const config = {
   workspaceMaxFileBytes: optionalEnvNumber("WORKSPACE_MAX_FILE_BYTES", 1048576),
   workspaceDiskQuotaBytes: optionalEnvNumber("WORKSPACE_DISK_QUOTA_BYTES", 104857600),
   workspaceMaxFiles: optionalEnvNumber("WORKSPACE_MAX_FILES", 200),
+  // 工作台前端管理界面（/工作台 命令 + /ws 网页路由，方案见
+  // docs/features/2026-11-09-工作台前端管理界面方案.md）。全部可选：
+  //   workspaceUiEnabled      —— 总开关，默认 false；关闭时命令提示未开启、
+  //                              webhook 不挂 /ws 路由。
+  //   workspaceUiPublicUrl    —— 对外域名（如 https://ws.example.com，不带尾斜杠）。
+  //                              签发给用户的链接 = 该值 + /ws/<token>。启用时必填。
+  //   workspaceUiTokenTtlDays —— token 有效天数（默认 30）：过期后重新发 /工作台 领取。
+  workspaceUiEnabled: optionalEnv("WORKSPACE_UI_ENABLED", "false") === "true",
+  workspaceUiPublicUrl: optionalEnv("WORKSPACE_UI_PUBLIC_URL", "").replace(/\/+$/, ""),
+  workspaceUiTokenTtlDays: optionalEnvNumber("WORKSPACE_UI_TOKEN_TTL_DAYS", 30),
 } as const;
+
+// 延迟校验：启用 UI 就必须有对外域名（链接签发的原料）。放 config 之后立即执行，
+// 启动即报——与 SEARCH_PROVIDER 的条件校验同款纪律。
+if (config.workspaceUiEnabled && config.workspaceUiPublicUrl === "") {
+  throw new Error(
+    "WORKSPACE_UI_ENABLED=true 需要配置 WORKSPACE_UI_PUBLIC_URL（如 https://ws.example.com）。",
+  );
+}
 
 // 延迟校验：SEARCH_PROVIDER=aliyun 时阿里三项必填。放在 config 定义之后立即执行，
 // 进程启动就报缺（而不是等第一次搜索请求时才炸）——requireEnv 的语义，按条件手写。

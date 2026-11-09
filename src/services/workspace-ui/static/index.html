@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>工作台</title>
+<link rel="stylesheet" href="/ws/static/style.css">
+</head>
+<body>
+<header id="topbar">
+  <span id="where">工作台</span>
+  <span id="crumb"></span>
+  <span class="spacer"></span>
+  <button id="btn-new-file" title="新建文件">新建文件</button>
+  <button id="btn-new-dir" title="新建目录">新建目录</button>
+  <button id="btn-rename" title="重命名选中项">重命名</button>
+  <button id="btn-delete" title="删除选中项">删除</button>
+  <button id="btn-save" class="primary" title="Ctrl+S">保存</button>
+</header>
+<main>
+  <nav id="tree" aria-label="文件树"></nav>
+  <section id="editor-pane">
+    <div id="empty-hint">在左侧选择一个文件打开<br>文件会保存到群工作台目录，Agent 任务与页面编辑共享同一份文件</div>
+    <div id="editor"></div>
+  </section>
+</main>
+<div id="overlay" hidden>
+  <div id="dialog">
+    <p id="dialog-text"></p>
+    <input type="text" id="dialog-input" hidden>
+    <div id="dialog-buttons"></div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="/ws/static/monaco/vs/loader.js"></script>
+<script src="/ws/static/app.js"></script>
+</body>
+</html>

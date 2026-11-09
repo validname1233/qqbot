@@ -22,8 +22,11 @@ import { config } from "../../config.js";
 // 显式 chmod 0o777——目录可写交给进程自身权限控制（bot 是 root 无所谓；
 // 容器内 runner 只要"别人不拒绝"就能写），比试图对齐 uid 简单且跨平台。
 // 已存在的旧目录不改（chown/chmod 需要权限且一次性手动处理更直接）。
-export function workspaceDirFor(event: BotEvent): string {
-  const hash = createHash("sha256").update(tenantKey(event)).digest("hex").slice(0, 32);
+//
+// key 版（workspaceDirForKey）供 UI 路由用（2026-11-09 前端方案 §7）：token 表
+// 反解出的 scope 就是 tenantKey 字符串，没有 BotEvent 可推。
+export function workspaceDirForKey(key: string): string {
+  const hash = createHash("sha256").update(key).digest("hex").slice(0, 32);
   const dir = join(config.workspaceRoot, hash);
   const existed = existsSync(dir);
   mkdirSync(dir, { recursive: true, mode: 0o777 });
@@ -37,6 +40,10 @@ export function workspaceDirFor(event: BotEvent): string {
     }
   }
   return dir;
+}
+
+export function workspaceDirFor(event: BotEvent): string {
+  return workspaceDirForKey(tenantKey(event));
 }
 
 // 校验失败的统一异常：工具层 catch 后把 message 直接回给模型（可读、可自纠）。

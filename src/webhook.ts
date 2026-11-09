@@ -14,6 +14,7 @@ import { initializePersonalities } from "./services/prompts/store.js";
 import { pruneOldLogs } from "./services/logger.js";
 import { initializeMcpTools } from "./agent/mcp/initialize.js";
 import { initializeWorkspace } from "./services/workspace/run-task.js";
+import { handleWorkspaceUi } from "./services/workspace-ui/http.js";
 import { logger } from "./services/logger.js";
 
 // 本地监听端口。只绑 127.0.0.1，不对公网暴露——外面只能经 nginx 进来。
@@ -67,6 +68,15 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  // 工作台 UI 路由（/ws/ 前缀，与 QQ 回调路径不相交）：独立模块、独立兜错，
+  // UI 的异常绝不冒进回调处理。静态页 + 文件 API，凭证为 token 表
+  //（方案 docs/features/2026-11-09-工作台前端管理界面方案.md §2）。
+  // 未开启（WORKSPACE_UI_ENABLED=false）时路由整个不挂——页面与 API 都 404。
+  if (config.workspaceUiEnabled && req.url !== undefined && req.url.startsWith("/ws/")) {
+    handleWorkspaceUi(req, res, new URL(req.url, `http://${req.headers.host ?? "localhost"}`));
+    return;
+  }
+
   // QQ 的回调都是 POST。其它方法直接拒。
   if (req.method !== "POST") {
     sendJson(res, 405, { message: "Method Not Allowed" });
