@@ -85,6 +85,9 @@ main { display: flex; flex: 1; min-height: 0; }
   display: flex; align-items: center; justify-content: center;
   z-index: 10;
 }
+/* 上面的 display:flex 会盖掉 hidden 属性的 UA 默认 display:none（作者样式
+   优先于 UA 样式），遮罩从加载起就常显——必须用更高优先级把它顶回来。 */
+#overlay[hidden] { display: none; }
 #dialog {
   min-width: 340px;
   max-width: 480px;
