@@ -78,6 +78,11 @@ let editor = null;          // monaco editor 实例（Monaco 加载完成后创�
 let current = null;         // { path, baseMtimeMs, dirty }
 let selectedNode = null;    // 树上选中节点 { path, isDir, el }
 
+// 脏状态钩子：Monaco 加载后在下方 require 回调里赋真身（此前为空操作——
+// setModel 调用点在顶层，钩子必须顶层可见；Monaco 未就绪时 setModel 本就
+// 不会发生，空实现足够）。
+let hookDirtyListener = () => {};
+
 /* ---------- Monaco ---------- */
 
 // worker 代理（AMD 标准做法）：worker 从 data: URL 起步，importScripts 到
@@ -114,10 +119,14 @@ require(["vs/editor/editor.main"], () => {
     readOnly: true,
     fontSize: 14,
   });
-  // 脏状态监听挂在 model 上（onDidChangeContent 是 model 的 API，不是
-  // editor 的——挂错对象会抛 TypeError 打断整个初始化回调）。每次换绑
-  // model（打开/切换文件）重新挂，旧 model 随替换被 GC，无需显式解绑。
-  const hookDirtyListener = (model) => {
+  // 脏状态监听挂在 model 上（onDidChangeContent 是 model 的 API）。双保险：
+  // ① onDidChangeModel 事件（换绑时对新 model 补挂）；② 每次 setModel 后由
+  // 调用点同步直挂（hookDirtyListener 幂等——用标记避免重复挂同一 model）。
+  // 实现赋给顶层 hookDirtyListener（调用点在外层作用域）。
+  const hooked = new WeakSet();
+  hookDirtyListener = (model) => {
+    if (model === null || model === undefined || hooked.has(model)) return;
+    hooked.add(model);
     model.onDidChangeContent(() => {
       if (current === null) return;
       current.dirty = true;
@@ -125,11 +134,7 @@ require(["vs/editor/editor.main"], () => {
       btnSave.disabled = false;
     });
   };
-  editor.onDidChangeModel((e) => {
-    if (e.newModel !== null && e.newModel !== undefined) hookDirtyListener(e.newModel);
-  });
-  // 初次 setModel 发生在 onDidChangeModel 首次触发前无法覆盖（create 时
-  // 自带一个空 model），给当前 model 也补挂一次。
+  editor.onDidChangeModel((e) => hookDirtyListener(e.newModel));
   hookDirtyListener(editor.getModel());
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveFile);
   monaco.languages.typescript?.javascriptDefaults?.setDiagnosticsOptions({
@@ -231,6 +236,7 @@ async function openFile(path) {
     current = { path, baseMtimeMs: f.mtimeMs, dirty: false };
     editorPane.classList.add("active");
     editor.setModel(monaco.editor.createModel(f.content, langOf(path)));
+    hookDirtyListener(editor.getModel());
     editor.updateOptions({ readOnly: false });
     document.title = `${path.split("/").pop()} - 工作台`;
     btnSave.disabled = false;
@@ -381,6 +387,7 @@ btnDelete.onclick = async () => {
     if (current !== null && current.path === selectedNode.path) {
       current = null;
       editor.setModel(monaco.editor.createModel("", "plaintext"));
+      hookDirtyListener(editor.getModel());
       editor.updateOptions({ readOnly: true });
       editorPane.classList.remove("active");
       document.title = "工作台";
