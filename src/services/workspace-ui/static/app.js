@@ -56,7 +56,11 @@ function dialog(text, buttons, { input = null } = {}) {
       if (b.danger) btn.className = "danger";
       btn.onclick = () => {
         overlay.hidden = true;
-        resolve(b.keepOpen === true ? undefined : (input !== null ? dialogInput.value : b.value));
+        // 输入模式下只有主按钮（确认）返回输入框的值；其余按钮（取消等）
+        // 返回按钮自身的 value——否则点"取消"也会把输入值当确认结果带出去。
+        let result = b.value;
+        if (b.primary && input !== null) result = dialogInput.value;
+        resolve(result);
       };
       dialogButtons.appendChild(btn);
     }
