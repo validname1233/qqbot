@@ -32,19 +32,19 @@ registerButtonHandler("testui", {
   },
 });
 
-// 事件构造（信封形状与真机一致）
+// 事件构造（2026-11-18 真机实测形状：交互 id 与 button_id 都在 d 内、
+// 群点按人字段为 group_member_openid——外层信封无 raw.id，文档记载的位置有误）
 const makeRaw = (buttonData: string, id = "itx-1", userOpenid = "Uclicker123") => ({
   op: 0,
-  id,
   t: "INTERACTION_CREATE",
   d: {
+    id,
     type: 11,
     scene: "group",
     chat_type: 1,
     group_openid: "G123",
-    user_openid: userOpenid,
-    data: { resolved: { button_data: buttonData } },
-    button_id: "btn1",
+    group_member_openid: userOpenid,
+    data: { resolved: { button_data: buttonData, button_id: "btn1" } },
   },
 });
 const fire = async (buttonData: string, id: string): Promise<void> => {
@@ -73,7 +73,7 @@ const fire = async (buttonData: string, id: string): Promise<void> => {
   check("② resolved 缺失 → null", parseEvent(bad1 as never) === null);
   const bad2 = { ...base, d: { ...base.d, type: 12 } }; // 非按钮回调
   check("② type≠11 → null", parseEvent(bad2 as never) === null);
-  check("② 无外层 id → null", parseEvent(({ ...base, id: undefined }) as never) === null);
+  check("② 无 d.id → null", parseEvent(({ ...base, d: { ...base.d, id: undefined } }) as never) === null);
 }
 
 // ---------- ③ 全链路路由 ----------
