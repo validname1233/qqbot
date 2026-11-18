@@ -74,6 +74,13 @@ const fire = async (buttonData: string, id: string): Promise<void> => {
   const bad2 = { ...base, d: { ...base.d, type: 12 } }; // 非按钮回调
   check("② type≠11 → null", parseEvent(bad2 as never) === null);
   check("② 无 d.id → null", parseEvent(({ ...base, d: { ...base.d, id: undefined } }) as never) === null);
+  // 官方群聊示例可无 button_id（2026-11-18 核对）——守卫应放行，buttonId 落空串
+  const noBtnId = { ...base, d: { ...base.d, data: { resolved: { button_data: "testui:x" } } } };
+  const evNoBtnId = parseEvent(noBtnId as never);
+  check(
+    "② button_id 缺失 → 放行且落空串",
+    evNoBtnId !== null && (evNoBtnId as { buttonId?: string }).buttonId === "",
+  );
 }
 
 // ---------- ③ 全链路路由 ----------
