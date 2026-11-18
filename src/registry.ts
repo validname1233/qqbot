@@ -22,6 +22,7 @@ import { helpService } from "./services/help.js";
 import { stopService } from "./services/stop.js";
 import { diceService } from "./services/dice.js";
 import { workspaceConsoleService } from "./services/workspace-console.js";
+import { buttonDemoService } from "./services/buttons/demo.js";
 import { logger } from "./services/logger.js";
 import { runSession } from "./session/runner.js";
 
@@ -64,6 +65,8 @@ registerCommand(diceService);
 // 工作台管理页入口：/工作台 签发浏览器文件管理器的链接（kb 同款两道闸）。
 // 仅在 WORKSPACE_UI_ENABLED 时可用（未开启时命令自身降级提示）。
 registerCommand(workspaceConsoleService);
+// 回调按钮测试入口（真机验证用，验证期临时注册）：/按钮 发两个测试按钮。
+registerCommand(buttonDemoService);
 
 // 观察型：每条消息都跑一遍的 service 列表。用注册函数而不是硬编码数组，
 // 和 registerCommand 保持同一种写法——加新观察者只需在下面补一行 registerObserver。
