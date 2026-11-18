@@ -27,7 +27,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Tool } from "../../src/agent/tool.js";
 import type { MessageContext } from "../../src/types.js";
-import type { BotEvent } from "../../src/events/registry.js";
+import type { MessageEvent } from "../../src/events/registry.js";
 import type { ChatMessage } from "../../src/agent/types.js";
 import {
   scoreCase,
@@ -277,7 +277,7 @@ function loadCases(): CaseFile[] {
   return JSON.parse(readFileSync(join(__dirname, "cases.json"), "utf8")) as CaseFile[];
 }
 
-function buildEvent(c: CaseFile, runTag: string): BotEvent {
+function buildEvent(c: CaseFile, runTag: string): MessageEvent {
   if (c.context.scene === "group") {
     return {
       type: "GROUP_AT_MESSAGE_CREATE",

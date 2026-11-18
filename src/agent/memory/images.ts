@@ -20,7 +20,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { BotEvent } from "../../events/registry.js";
+import type { MessageEvent } from "../../events/registry.js";
 import { isImageAttachment } from "../../events/attachments.js";
 import { tenantKey } from "../../session/key.js";
 import { chatRows } from "./events.js";
@@ -135,7 +135,7 @@ export function pruneImagesOutsideWindow(key: string): void {
 // 之后才能跑，否则刚插的图片行尚无任何引用，会被当场误删
 //（2026-10-28 真机事故：图片入库日志存在但表为空、引用全部悬空）。
 // prune 由 recordInbound 在 chat 行落库后显式调用（见 transcript.ts）。
-export async function persistEventImages(event: BotEvent): Promise<number[]> {
+export async function persistEventImages(event: MessageEvent): Promise<number[]> {
   const images = event.attachments.filter(isImageAttachment);
   if (images.length === 0) return [];
 

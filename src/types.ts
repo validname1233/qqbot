@@ -2,14 +2,14 @@
 // 这里只放"形状"，不放任何实现。handler、registry、各个具体 service 都 import 这里，
 // 保证大家对"一条消息长什么样""一个 service 该实现哪些方法"有一致的理解。
 
-import type { BotEvent } from "./events/registry.js";
+import type { MessageEvent } from "./events/registry.js";
 
 // 一条消息规整后的统一输入。消息只解析一次，命令型和观察型 service 共用它。
 // 好处：具体 service 不用各自再 parse 一遍 event.content，拿来即用。
-// event 是 BotEvent（单聊或群消息）——两种事件都有 content/authorOpenid/msgId，
-// service 拿这几个字段即可，不必关心具体是哪种事件。
+// event 是 MessageEvent（单聊或群消息——聊天事件子联合，不含按钮回调），
+// 两种事件都有 content/authorOpenid/msgId，service 拿这几个字段即可。
 export interface MessageContext {
-  event: BotEvent; // 原始事件。service 要 openid / msgId 时从这里取
+  event: MessageEvent; // 原始事件。service 要 openid / msgId 时从这里取
   text: string; // 去掉首尾空白后的完整内容
   command: string | null; // "聊天" / "游戏模式" / null（消息没带 / 命令）
   args: string; // 命令后面的部分。"/聊天 今天天气" → "今天天气"

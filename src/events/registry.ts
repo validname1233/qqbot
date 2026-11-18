@@ -10,11 +10,17 @@ import type { RawEvent } from "./raw.js";
 import { c2cMessageDef } from "./C2C_MESSAGE_CREATE/index.js";
 import { groupAtMessageDef } from "./GROUP_AT_MESSAGE_CREATE/index.js";
 import { groupMessageDef } from "./GROUP_MESSAGE_CREATE/index.js";
+import { interactionCreateDef } from "./INTERACTION_CREATE/index.js";
 import { logger } from "../services/logger.js";
 
 // 所有已知事件定义。加事件 = 往这个数组加一项（并在上面 import）。
 // as const 让 TS 记住数组每一项的精确类型，下面才能反推出各事件的联合。
-export const eventDefs = [c2cMessageDef, groupAtMessageDef, groupMessageDef] as const;
+export const eventDefs = [
+  c2cMessageDef,
+  groupAtMessageDef,
+  groupMessageDef,
+  interactionCreateDef,
+] as const;
 
 // 从「定义」反推出它解析出的事件类型：EventDefinition<E> → E。
 type EventOf<D> = D extends EventDefinition<infer E> ? E : never;
@@ -22,6 +28,14 @@ type EventOf<D> = D extends EventDefinition<infer E> ? E : never;
 // BotEvent = 所有已登记定义对应事件的联合。
 // 不用手写 union——往 eventDefs 加定义，这个联合自动多一个成员。
 export type BotEvent = EventOf<(typeof eventDefs)[number]>;
+
+// MessageEvent = 聊天消息事件的子联合（2026-11-10 回调按钮方案）：
+// INTERACTION_CREATE 加入 BotEvent 后，所有"只处理聊天消息"的消费方
+//（tenantKey / buildContext / recordInbound / progress-bus / 工作台目录……）
+// 改用这个窄联合——按钮回调走自己的管道（button-registry），永不进这些函数，
+// 类型上也不该假装它可能是。新聊天事件加入 eventDefs 时要同步补进这里
+//（代价是显式维护一份子联合，换来消息管道代码的类型收窄不被按钮事件污染）。
+export type MessageEvent = Exclude<BotEvent, { type: "INTERACTION_CREATE" }>;
 
 // ---------- 解析入口 ----------
 // 按 raw.t 找对应定义；没登记的事件返回 null（上层安静忽略）。

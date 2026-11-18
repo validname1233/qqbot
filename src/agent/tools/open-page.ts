@@ -6,7 +6,7 @@
 // 与 interact_page 的分工：本工具用 fetch+cheerio（快、便宜、无浏览器开销），
 // 页面需要 JS 渲染或点击交互时模型应改调 interact_page。
 
-import type { BotEvent } from "../../events/registry.js";
+import type { MessageEvent } from "../../events/registry.js";
 import type { Tool } from "../tool.js";
 import type { ToolSchema } from "../types.js";
 import type { MessageContext } from "../../types.js";
@@ -71,7 +71,7 @@ export const agentOpenPageTool: Tool = {
 // 该是确定性代码）。失败直接抛出（fetchPage 的错误自带可读文案），兜底方式由
 // 调用方决定：工具路径转成模型可读的提示串（runOpenPage 的 catch），
 // 预读路径收进失败清单（searchNode 的全败 Tavily 兜底）。
-export async function loadPage(url: string, event: BotEvent): Promise<string> {
+export async function loadPage(url: string, event: MessageEvent): Promise<string> {
   const t0 = Date.now();
   const fetched = await fetchPage(url);
   const page = extractPage(fetched.html, fetched.finalUrl);
@@ -82,7 +82,7 @@ export async function loadPage(url: string, event: BotEvent): Promise<string> {
 
 export async function runOpenPage(
   args: Record<string, unknown>,
-  event: BotEvent,
+  event: MessageEvent,
 ): Promise<string> {
   const url = typeof args.url === "string" ? args.url.trim() : "";
   const link = typeof args.link === "number" ? args.link : null;

@@ -8,6 +8,7 @@ import type { BotEvent } from "./registry.js";
 import { handleC2CMessage } from "../handlers/C2C_MESSAGE_CREATE.js";
 import { handleGroupAtMessage } from "../handlers/GROUP_AT_MESSAGE_CREATE.js";
 import { handleGroupMessage } from "../handlers/GROUP_MESSAGE_CREATE.js";
+import { handleInteractionCreate } from "../handlers/INTERACTION_CREATE.js";
 import { recordInbound } from "../services/transcript.js";
 import { logger } from "../services/logger.js";
 import { startRun } from "../services/trace.js";
@@ -23,11 +24,23 @@ const handlers: HandlerMap = {
   C2C_MESSAGE_CREATE: handleC2CMessage,
   GROUP_AT_MESSAGE_CREATE: handleGroupAtMessage,
   GROUP_MESSAGE_CREATE: handleGroupMessage,
+  INTERACTION_CREATE: handleInteractionCreate,
 };
 
 // 分发一个事件。event 为 null（未识别事件）时安静忽略。
 export async function dispatch(event: BotEvent | null): Promise<void> {
   if (event === null) return;
+
+  // 按钮回调不走 chat 转录（方案 2026-11-10 §2.3）：recordInbound 是聊天
+  // 消息的入站收口（chat_user 行 / 图片伴生 / 重推短路），按钮点击不是对话
+  // 内容——落库会污染 L1 投影（blob 里混进用户没说过的话）。直接进 handler。
+  if (event.type === "INTERACTION_CREATE") {
+    await startRun(async () => {
+      logger.node("events", `run 开始（按钮回调 button_data=${event.buttonData.slice(0, 50)}）`);
+      await handleInteractionCreate(event);
+    });
+    return;
+  }
 
   // 入站转录收口（总方案模块一 §1.2）：所有消息（命令/非命令/状态机）在路由
   // 分叉之前先落一行 chat_user——"每类事件恰好一个写入者"的入站那一半。

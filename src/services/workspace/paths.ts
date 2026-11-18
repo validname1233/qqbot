@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
-import type { BotEvent } from "../../events/registry.js";
+import type { MessageEvent } from "../../events/registry.js";
 import { tenantKey } from "../../session/key.js";
 import { config } from "../../config.js";
 
@@ -24,7 +24,7 @@ import { config } from "../../config.js";
 // 已存在的旧目录不改（chown/chmod 需要权限且一次性手动处理更直接）。
 //
 // key 版（workspaceDirForKey）供 UI 路由用（2026-11-09 前端方案 §7）：token 表
-// 反解出的 scope 就是 tenantKey 字符串，没有 BotEvent 可推。
+// 反解出的 scope 就是 tenantKey 字符串，没有 MessageEvent 可推。
 export function workspaceDirForKey(key: string): string {
   const hash = createHash("sha256").update(key).digest("hex").slice(0, 32);
   const dir = join(config.workspaceRoot, hash);
@@ -42,7 +42,7 @@ export function workspaceDirForKey(key: string): string {
   return dir;
 }
 
-export function workspaceDirFor(event: BotEvent): string {
+export function workspaceDirFor(event: MessageEvent): string {
   return workspaceDirForKey(tenantKey(event));
 }
 

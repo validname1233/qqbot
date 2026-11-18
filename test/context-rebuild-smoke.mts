@@ -16,7 +16,7 @@ import { appendEvent, clearEvents, chatRowsAll, chatRows } from "../src/agent/me
 import { projectWindow } from "../src/agent/assembly.js";
 import { estimateTokens } from "../src/agent/assembly.js";
 import type { MessageContext } from "../src/types.js";
-import type { BotEvent } from "../src/events/registry.js";
+import type { MessageEvent } from "../src/events/registry.js";
 import { config } from "../src/config.js";
 
 const KEY = `group:smoke-${Date.now()}`;
@@ -42,7 +42,7 @@ const ev = {
   type: "GROUP_MESSAGE_CREATE", content: "帮我搜下周末天气", attachments: [],
   groupOpenid: KEY.slice(6), authorOpenid: "u1", authorRole: null, authorName: "小明",
   msgId: "m3", mentionsBot: true,
-} as unknown as BotEvent;
+} as unknown as MessageEvent;
 const ctx: MessageContext = { event: ev, text: "帮我搜下周末天气", command: "Agent", args: "帮我搜下周末天气" };
 const proj = await projectWindow(ctx);
 const firstMsg = proj.messages[0];
@@ -109,7 +109,7 @@ const ev7 = {
   type: "GROUP_MESSAGE_CREATE", content: "短路测试", attachments: [],
   groupOpenid: KEY.slice(6), authorOpenid: "u1", authorRole: null, authorName: "小明",
   msgId: `shortcircuit-${Date.now()}`, mentionsBot: false,
-} as unknown as BotEvent;
+} as unknown as MessageEvent;
 check("⑦ 无图消息首见 → true", (await recordInbound(ev7)) === true);
 check("⑦ 同 msgId 重推 → false", (await recordInbound(ev7)) === false);
 // 直接 mock persistEventImages 的失败面：插入无引用行后模拟重推接回）。
@@ -118,7 +118,7 @@ const ev7img = {
   attachments: [{ url: "http://127.0.0.1:1/x.jpg", filename: "x.jpg", contentType: "image/jpeg" }],
   groupOpenid: KEY.slice(6), authorOpenid: "u1", authorRole: null, authorName: "小明",
   msgId: `imgfail-${Date.now()}`, mentionsBot: false,
-} as unknown as BotEvent;
+} as unknown as MessageEvent;
 // 只验证落行语义（不等真实下载超时）：手动落无引用行，模拟"全败也落行"
 appendEvent({ key: KEY, kind: "chat_user", role: "user", author: { openid: "u1", name: "小明" }, content: "看这张图", attachmentIds: null, qqMsgId: ev7img.msgId });
 const rowBefore = chatRowsAll(KEY).find((r) => r.qqMsgId === ev7img.msgId);

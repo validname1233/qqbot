@@ -18,7 +18,7 @@ export type ButtonPermission =
   | { type: 1 }
   | { type: 2 };
 
-// Button 结构（详解文档 §3）。当前只用到跳转按钮（type=0）所需字段的子集；
+// Button 结构（详解文档 §3）。当前用到跳转（type=0）与回调（type=1）两类；
 // 回调（type=1）/指令（type=2）按钮将来要用时再补全 action 的可选字段。
 export interface KeyboardButton {
   id: string;
@@ -28,7 +28,7 @@ export interface KeyboardButton {
     style: number;
   };
   action: {
-    type: 0; // 跳转按钮：点击后客户端打开 data 里的链接
+    type: 0 | 1; // 0 跳转按钮：打开 data 里的链接；1 回调按钮：推 INTERACTION_CREATE
     permission: ButtonPermission;
     data: string;
     unsupport_tips: string;
@@ -55,10 +55,42 @@ export function jumpButton(
       style: 1, // 蓝线框（详解文档 §3：0 灰线框 / 1 蓝线框 / 3 白底红字 / 4 蓝底白字）
     },
     action: {
-      type: 0,
+      type: 0, // 跳转按钮：点击后客户端打开 data 里的链接
       permission,
       data: url,
       unsupport_tips: "当前客户端不支持按钮跳转",
+    },
+  };
+}
+
+// 构造一个回调按钮（action.type=1，方案 2026-11-10 §3.2）。
+// 点击后平台推 INTERACTION_CREATE 事件，data 原样回到 handler。
+// data 必须遵守命名空间路由格式 "ns:payload"（button-registry 按第一个
+// 冒号前的 ns 分发）——格式在源头（构造处）约束，坏 data 不出本进程。
+export function callbackButton(
+  id: string,
+  label: string,
+  data: string,
+  permission: ButtonPermission = { type: 2 },
+): KeyboardButton {
+  if (label.length > 10) {
+    throw new Error(`按钮 label 超过 10 字符：「${label}」`);
+  }
+  if (!/^[a-z][a-z0-9-]*:.+$/.test(data)) {
+    throw new Error(`回调按钮 data 必须是 "ns:payload" 格式（收到「${data}」，ns 须为小写字母开头）`);
+  }
+  return {
+    id,
+    render_data: {
+      label,
+      visited_label: label,
+      style: 1,
+    },
+    action: {
+      type: 1, // 回调按钮：点击后平台推 INTERACTION_CREATE
+      permission,
+      data,
+      unsupport_tips: "当前客户端不支持按钮回调",
     },
   };
 }

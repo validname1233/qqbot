@@ -11,7 +11,7 @@
 // 订阅 key 用 tenantKey（群粒度，2026-10-14 键统一），与 /stop 并发闸（beginControlledFlow）
 // 同粒度——同 key 并发请求本来就被闸挡住，"一个 key 至多一个活跃订阅"成立。
 
-import type { BotEvent } from "../events/registry.js";
+import type { MessageEvent } from "../events/registry.js";
 import { tenantKey } from "../session/key.js";
 import { pushGroupMessage, pushC2CMessage } from "../qq/messages.js";
 import { logger } from "./logger.js";
@@ -29,7 +29,7 @@ const listeners = new Map<string, Listener[]>();
 // 群/私聊分支的统一适配器：进度消息全部走主动推送（push，不带 msg_id）——
 // 不消耗被动回复额度（群聊每条消息仅 5 次），也不受 5 分钟回复窗口约束
 // （长流程的进度天然可能落在窗口外）。
-function makeListener(event: BotEvent): Listener {
+function makeListener(event: MessageEvent): Listener {
   return async (text) => {
     if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
       // record:false —— 进度提示是瞬时 UI 反馈，不是对话内容，不进任何层
@@ -44,7 +44,7 @@ function makeListener(event: BotEvent): Listener {
 // 请求入口调用（runAgentTurn / 深检 / workspace）：建立这次请求的进度订阅，
 // 返回退订函数。嵌套安全：每个订阅是栈上的独立实例，退订只弹自己（按闭包
 // 身份 indexOf+splice）——即使外层先于内层退订（异常顺序）也不误伤。
-export function subscribeProgress(event: BotEvent): () => void {
+export function subscribeProgress(event: MessageEvent): () => void {
   const key = tenantKey(event);
   const listener = makeListener(event);
   const stack = listeners.get(key) ?? [];
@@ -63,7 +63,7 @@ export function subscribeProgress(event: BotEvent): () => void {
 // 请求，与旧单值语义一致）投递一条进度文案。同步返回、不 await 送达——
 // 事件源（工具执行）永远不为推送耗时买单；listener 的失败在这里兜成 warn
 // （用户关闭"允许主动消息"时静默降级，进度提示是锦上添花，不能炸掉工具本身）。
-export function emitProgress(event: BotEvent, text: string): void {
+export function emitProgress(event: MessageEvent, text: string): void {
   const key = tenantKey(event);
   const stack = listeners.get(key);
   const listener = stack === undefined ? undefined : stack[stack.length - 1];

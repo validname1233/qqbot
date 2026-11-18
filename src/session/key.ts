@@ -22,13 +22,15 @@
 // group_personalities）存的两段键形状与本函数输出一致，零迁移；sessionKey 的旧三段值
 // 只存在于内存 Map（interrupt/progress-bus/page-pool），重启即清。
 
-import type { BotEvent } from "../events/registry.js";
+import type { MessageEvent } from "../events/registry.js";
 
 // 租户键：群聊一群一份（整群共享），单聊一人一份。
 // 前缀 group: / c2c: 是命名空间隔离：万一群 openid 和用户 openid 字符串偶然相同，
 // 有前缀就不会串到同一份状态里。event.type 一判，TS 把 event 收窄到对应事件，
 // 才能安全访问 groupOpenid / authorOpenid（可辨识联合收窄，和 dispatcher 里同一套路）。
-export function tenantKey(event: BotEvent): string {
+// 入参用 MessageEvent（聊天事件子联合）：按钮回调有自己的租户语义（scene +
+// openid），不走这个键——2026-11-10 回调按钮方案的类型分流。
+export function tenantKey(event: MessageEvent): string {
   if (event.type === "GROUP_AT_MESSAGE_CREATE" || event.type === "GROUP_MESSAGE_CREATE") {
     return `group:${event.groupOpenid}`;
   }

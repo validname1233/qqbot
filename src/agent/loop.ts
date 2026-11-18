@@ -34,7 +34,7 @@ import type { ChatMessage } from "./types.js";
 
 // 工具调用最多几轮。2 表示：允许一次串行依赖。轮次触顶且模型仍想调工具时
 // 走 forcedFinalize 降级（v9：二期 token 预算判定落地后，触发器可换成预算）。
-const MAX_TOOL_TURNS = 2;
+const MAX_TOOL_TURNS = 4;
 
 // messages 用累加式的 ReducedValue：每个节点只管返回"这一步新增的消息"。
 const AgentState = new StateSchema({

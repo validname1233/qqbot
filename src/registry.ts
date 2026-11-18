@@ -7,7 +7,7 @@ import type {
   MessageContext,
   ObserverService,
 } from "./types.js";
-import type { BotEvent } from "./events/registry.js";
+import type { MessageEvent } from "./events/registry.js";
 import type { Effect } from "./machines/types.js";
 import { pushC2CMessage, pushGroupMessage } from "./qq/messages.js";
 import { reminderService } from "./services/reminder.js";
@@ -79,7 +79,7 @@ void registerObserver; // 暂无注册者；保留机制声明避免 unused 报�
 // ---------- 把原始事件规整成统一 context ----------
 // 解析规则：内容以 / 开头 → 去掉 /，按第一个空格切成 command + args；
 // 否则 command 为 null（走兜底聊天），args 为空。
-export function buildContext(event: BotEvent): MessageContext {
+export function buildContext(event: MessageEvent): MessageContext {
   const text = event.content.trim();
 
   if (!text.startsWith("/")) {

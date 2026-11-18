@@ -18,13 +18,13 @@ import { config } from "../config.js";
 import { logger } from "../services/logger.js";
 import { appendEvent } from "./memory/events.js";
 import { tenantKey } from "../session/key.js";
-import type { BotEvent } from "../events/registry.js";
+import type { MessageEvent } from "../events/registry.js";
 
 // 过程归档（双子 Agent 工具化方案 §2.3，2026-10-31）：子 Agent 中间过程落
 // process 行（origin="workspace"），与主链路/深检同构；永不投影（v7），
 // 仅排查回放。落库失败不炸图（档案缺行 < 任务中断）。
 function archiveWorkspaceProcess(
-  event: BotEvent,
+  event: MessageEvent,
   row: { role: "assistant" | "tool"; content: string | null; toolCalls?: ChatMessage["tool_calls"]; toolCallId?: string },
 ): void {
   try {

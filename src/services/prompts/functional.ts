@@ -3,7 +3,7 @@
 // 2026-10-29 提示词 v2：人格缓存与存取自 builder.ts 迁入本文件；主 Agent 的
 // system 拼装改为本文件的专用函数 getAgentSystemPrompt（见文件尾部）。
 
-import type { BotEvent } from "../../events/registry.js";
+import type { MessageEvent } from "../../events/registry.js";
 import { tenantKey } from "../../session/key.js";
 
 // 默认人格（汐汐的角色设定），可被数据库里的自定义人格覆盖。
@@ -170,7 +170,7 @@ const personalityCache = new Map<string, string>();
 
 // 按事件取该租户的人格：自定义（/set_personality 存库后由 store 刷进缓存）
 // 优先，DEFAULT_PERSONALITY 兜底。
-export function getPersonality(event: BotEvent): string {
+export function getPersonality(event: MessageEvent): string {
   const key = tenantKey(event);
   return personalityCache.get(key) ?? DEFAULT_PERSONALITY;
 }
@@ -197,7 +197,7 @@ export function getAllCachedKeys(): string[] {
 // [M1 身份与输入格式 + M2 工具判断] + 人格（按租户）+ [M3 输出格式]。
 // 提示词 v2 决议：Agent 主链路不走 getSystemPrompt 的场景表——专用函数直拼，
 // HEAD/TAIL 在本文件，人格也在本文件，单一文件闭环。
-export function getAgentSystemPrompt(event: BotEvent): string {
+export function getAgentSystemPrompt(event: MessageEvent): string {
   return `${AGENT_UNIFIED_HEAD}\n\n${getPersonality(event)}\n\n${AGENT_UNIFIED_TAIL}`;
 }
 

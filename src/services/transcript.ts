@@ -11,7 +11,7 @@
 //   出站：messages.ts 8 个发送函数在 traceOut 处同步写；发送成功才记
 //         （没发出的消息不存在）；progress-bus 传 record:false 排除瞬时进度。
 
-import type { BotEvent } from "../events/registry.js";
+import type { MessageEvent } from "../events/registry.js";
 import { tenantKey } from "../session/key.js";
 import { appendEvent, db } from "../agent/memory/events.js";
 import { persistEventImages, pruneImagesOutsideWindow } from "../agent/memory/images.js";
@@ -30,7 +30,7 @@ import { logger } from "./logger.js";
 // 图片全败也落行（attachmentIds=null）：消息事实与"已处理"标记统一在行上；
 // QQ 重推时 persistEventImages 会把缺的图补进图片表，此处 UPDATE 接上引用
 // （懒补全）；没重推就按无图降级（投影时 [图片] 裸标记，语义自明）。
-export async function recordInbound(event: BotEvent): Promise<boolean> {
+export async function recordInbound(event: MessageEvent): Promise<boolean> {
   const key = tenantKey(event);
   try {
     // 先持久化附件拿 id 列表（图片下载 ≤10s 超时兜底），再写 chat_user 行。

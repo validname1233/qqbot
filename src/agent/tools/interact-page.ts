@@ -7,7 +7,7 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { BotEvent } from "../../events/registry.js";
+import type { MessageEvent } from "../../events/registry.js";
 import type { Tool } from "../tool.js";
 import type { ToolSchema } from "../types.js";
 import type { MessageContext } from "../../types.js";
@@ -79,7 +79,7 @@ export const interactPageTool: Tool = {
 
 export async function runInteractPage(
   args: Record<string, unknown>,
-  event: BotEvent,
+  event: MessageEvent,
 ): Promise<string> {
   const url = typeof args.url === "string" ? args.url.trim() : "";
   const action = typeof args.action === "string" ? args.action : "";

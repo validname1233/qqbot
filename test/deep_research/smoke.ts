@@ -7,13 +7,13 @@
 import { fetchPage } from "../../src/services/browse/fetch.js";
 import { extractPage, formatPageForModel } from "../../src/services/browse/extract.js";
 import { savePage, resolveLink, clearPagePools } from "../../src/services/browse/page-pool.js";
-import type { BotEvent } from "../../src/events/registry.js";
+import type { MessageEvent } from "../../src/events/registry.js";
 
 const mockEvent = {
   type: "C2C_MESSAGE_CREATE",
   authorOpenid: "smoke-test",
   authorName: "冒烟测试",
-} as unknown as BotEvent;
+} as unknown as MessageEvent;
 
 let failures = 0;
 function check(name: string, condition: boolean, detail = ""): void {
