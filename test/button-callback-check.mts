@@ -122,7 +122,7 @@ const fire = async (buttonData: string, id: string): Promise<void> => {
   // 本测试进程内 dispatch 过若干 interaction；transcript 里不应有对应行
   //（chat_user 行只来自消息事件——本测试没发过消息，表应为空或不含按钮数据）
   const rows = chatRowsAll("group:G123");
-  check("⑦ 按钮点击不进 transcript", rows.every((r) => !r.content.includes("testui")));
+  check("⑦ 按钮点击不进 transcript", rows.every((r) => !(r.content ?? "").includes("testui")));
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
