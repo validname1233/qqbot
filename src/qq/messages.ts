@@ -225,6 +225,49 @@ export async function replyC2CMarkdownWithKeyboard(
   traceOut("单聊回复Markdown+按钮", `c2c:${openid}`, markdownContent, "kb", ` seq=${msgSeq}`);
 }
 
+// 主动推送带按钮（keyboard）的群 Markdown 消息（无 msg_id——主动消息）。
+// 与 reply 版的全部差异就是不带 msg_id/msg_seq：不受"被动回复 5 分钟窗口"限制，
+// 可在任意时刻发。用途：审批询问（任务开始几分钟后才触发，触发消息的 msgId
+// 早已过期，被动回复不可用）。代价是主动消息频控（单群 20/qpm 等）。
+// 红线同 reply 版：调用方必须自己 catch，不让降级链把按钮载荷裸发。
+export async function pushGroupMarkdownWithKeyboard(
+  groupOpenid: string,
+  markdownContent: string,
+  keyboard: { content: { rows: Array<{ buttons: unknown[] }> } },
+  opts: PushOptions = {},
+): Promise<void> {
+  await apiRequest(`/v2/groups/${groupOpenid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content: "",
+      msg_type: MSG_TYPE_MARKDOWN,
+      markdown: { content: markdownContent },
+      keyboard,
+    }),
+  });
+  traceOut("群推送Markdown+按钮", `group:${groupOpenid}`, markdownContent, "kb-push", "", opts.record !== false);
+}
+
+// 主动推送带按钮（keyboard）的单聊 Markdown 消息。语义同群版（无被动窗口
+// 限制，有主动频控）；单聊通道私密，无降级红线。
+export async function pushC2CMarkdownWithKeyboard(
+  openid: string,
+  markdownContent: string,
+  keyboard: { content: { rows: Array<{ buttons: unknown[] }> } },
+  opts: PushOptions = {},
+): Promise<void> {
+  await apiRequest(`/v2/users/${openid}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content: "",
+      msg_type: MSG_TYPE_MARKDOWN,
+      markdown: { content: markdownContent },
+      keyboard,
+    }),
+  });
+  traceOut("单聊推送Markdown+按钮", `c2c:${openid}`, markdownContent, "kb-push", "", opts.record !== false);
+}
+
 // 发送群消息（被动回复）。
 // groupOpenid：哪个群（来自事件的 groupOpenid）。
 // 其余参数含义同 replyC2CMessage。只是接口路径不同：群消息发到 /v2/groups/...。

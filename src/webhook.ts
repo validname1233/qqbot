@@ -15,6 +15,7 @@ import { pruneOldLogs } from "./services/logger.js";
 import { initializeMcpTools } from "./agent/mcp/initialize.js";
 import { initializeWorkspace } from "./services/workspace/run-task.js";
 import { initializeButtons } from "./services/buttons/demo.js";
+import { initializeApproval } from "./services/buttons/approval.js";
 import { handleWorkspaceUi } from "./services/workspace-ui/http.js";
 import { logger } from "./services/logger.js";
 
@@ -177,6 +178,10 @@ await initializeWorkspace();
 // 回调按钮 demo 处理器注册（方案 2026-11-10 §3.4）：真机验证全链路用，
 // 只注册不占消息路径。验证通过后此行可删。
 initializeButtons();
+
+// 风险操作审批处理器注册（方案 2026-11-18）：APPROVAL_MODE=off 时
+// requestApproval 直接放行，注册本身无副作用。
+initializeApproval();
 
 server.listen(PORT, HOST, () => {
   logger.info("webhook", `监听 http://${HOST}:${PORT}（经 nginx 反代对外提供 HTTPS）`);

@@ -231,6 +231,13 @@ export const config = {
   workspaceMaxFileBytes: optionalEnvNumber("WORKSPACE_MAX_FILE_BYTES", 1048576),
   workspaceDiskQuotaBytes: optionalEnvNumber("WORKSPACE_DISK_QUOTA_BYTES", 104857600),
   workspaceMaxFiles: optionalEnvNumber("WORKSPACE_MAX_FILES", 200),
+  // Agent 风险操作审批（human-in-the-loop，方案见
+  // docs/features/2026-11-18-Agent-human-in-the-loop实现方案.md）。
+  //   approvalMode —— off（默认，审批关闭：requestApproval 直接放行，行为同
+  //                   引入前）| risky（风险点问询——当前接入 workspace exec）。
+  //   approvalTtlMs —— 审批等待超时（默认 10 分钟）：到点自动拒绝并通知。
+  approvalMode: optionalEnv("APPROVAL_MODE", "off"),
+  approvalTtlMs: optionalEnvNumber("APPROVAL_TTL_MS", 10 * 60 * 1000),
   // 工作台前端管理界面（/工作台 命令 + /ws 网页路由，方案见
   // docs/features/2026-11-09-工作台前端管理界面方案.md）。全部可选：
   //   workspaceUiEnabled      —— 总开关，默认 false；关闭时命令提示未开启、

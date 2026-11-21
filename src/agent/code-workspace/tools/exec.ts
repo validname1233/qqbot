@@ -9,6 +9,7 @@
 import type { Tool } from "../../tool.js";
 import type { MessageContext } from "../../../types.js";
 import { execInContainer, ExecutorError } from "../../../services/workspace/executor.js";
+import { requestApproval } from "../../../services/buttons/approval.js";
 import { asString, toolError } from "./shared.js";
 
 // run-task 在任务开始时 set、结束时 clear；工具执行期读。
@@ -45,6 +46,24 @@ export const execTool: Tool = {
     }
     if (currentContainer === null) {
       return toolError("exec", "任务容器未运行（内部状态异常），请停止当前任务重试");
+    }
+
+    // 风险操作审批（方案 2026-11-18 §3.7）：执行前征求许可——APPROVAL_MODE=off
+    // 时 requestApproval 直接放行（零开销）；拒绝/熔断以文本回流，模型自行换路。
+    try {
+      const decision = await requestApproval(ctx, {
+        kind: "workspace-exec",
+        title: "Agent 请求在工作台执行命令",
+        detail: command,
+      });
+      if (decision === "deny") {
+        return `操作被用户拒绝：${command}\n不要重试同样的操作；可以询问用户希望如何调整，或改用更安全的方式。`;
+      }
+      if (decision === "breaker") {
+        return "该类操作已被多次拒绝，请与用户确认方案后重新发起任务。";
+      }
+    } catch (err) {
+      return toolError("exec", `审批消息发送失败，本次操作未执行：${err instanceof Error ? err.message : err}`);
     }
 
     try {
