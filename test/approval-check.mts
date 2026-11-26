@@ -128,9 +128,10 @@ const makeCtx = () => ({
   const id = lastId();
   await click(`approval:allow-once:${id}`);
   const first = await p;
+  const notifiesBefore = notifies.length;
   const again = await click(`approval:allow-once:${id}`); // 已结案后再点
   check("④ 首次 allow 正常", first === "allow");
-  check("④ 二次点击不炸且提示已处理", again === true && notifies.some((t) => t.includes("已处理或已过期")));
+  check("④ 二次点击静默丢弃（不炸、无提示）", again === true && notifies.length === notifiesBefore);
   endControlledFlow("group:G123", flow!);
 }
 

@@ -276,13 +276,9 @@ async function handleApprovalClick(interaction: ButtonInteraction): Promise<bool
   const entry = pending.get(id);
 
   if (entry === undefined) {
-    // 已决/过期/已作废——给点击者一个回执，避免"点了没反应"的困惑。
-    await transport
-      .notify(interaction.groupOpenid !== null
-        ? { scene: "group", id: interaction.groupOpenid }
-        : { scene: "c2c", id: interaction.userOpenid },
-        "该审批已处理或已过期")
-      .catch(() => undefined);
+    // 已决/过期/已作废——静默丢弃（2026-11-18 决议：重复点击不推送提示，
+    // 按钮的 loading 已由管道层的平台回应终结，用户无感知负担）。
+    logger.info("approval", `点击已失效审批（id=${id.slice(0, 8)}…，who=${interaction.userOpenid.slice(0, 6)}…）`);
     return true;
   }
 
